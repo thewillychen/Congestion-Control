@@ -41,6 +41,10 @@ struct reliable_state {
 };
 rel_t *rel_list;
 
+//Helper function declarations
+void send_prepare(packet_t * packet);
+packet_t * create_data_packet(rel_t * s);
+
 
 
 
@@ -124,24 +128,24 @@ rel_read (rel_t *s)
     packet_t * newPacket = create_data_packet(s);
     if(newPacket == NULL)
       return;
-    else if(NewPacket->len == EOF_PACKET_SIZE){//check for -1 aka EOF
+    else if(newPacket->len == EOF_PACKET_SIZE){//check for -1 aka EOF
       //Do something?
     }
     send_prepare(newPacket);
     conn_sendpkt(s->c, newPacket, (size_t)newPacket->len);
     queue * sent = xmalloc(sizeof(queue));
     sent->pkt = newPacket;
-    if(s->sendQ == NULL){
-      sendQ = sent;
-      sendQ->next == NULL;
-      sendQ->prev == NULL;
+    if(s->SendQ == NULL){
+      s->SendQ = sent;
+      s->SendQ->next = NULL;
+      s->SendQ->prev = NULL;
     }else{
-      sendQ->prev = sent;
-      sent->next = sendQ;
+      s->SendQ->prev = sent;
+      sent->next = s->SendQ;
       sent->prev = NULL;
-      sendQ = sent;
+      s->SendQ = sent;
     }
-    LFS++;
+    s->LFS++;
   }
 }
 
@@ -158,10 +162,10 @@ packet_t * create_data_packet(rel_t * s){
   if(bytes == -1){
     packet->len = EOF_PACKET_SIZE;
   }else{
-    packet-> = EOF_PACKET_SIZE + bytes;
+    packet->len = EOF_PACKET_SIZE + bytes;
   }
   packet->ackno = (uint32_t) 1;
-  packet->seqno=LFS+1;
+  packet->seqno=s->LFS+1;
   return packet;
 }
 
