@@ -36,6 +36,8 @@ struct reliable_state {
   conn_t *c;			/* This is the connection object */
   queue * SendQ;
   queue * RecQ;
+  int sentEOF;
+  int recvEOF;
   /* Add your own data fields below this */
 
 };
@@ -44,7 +46,7 @@ rel_t *rel_list;
 //Helper function declarations
 void send_prepare(packet_t * packet);
 packet_t * create_data_packet(rel_t * s);
-
+int check_close(rel_t * s);
 
 int acktoSend;
 
@@ -79,6 +81,8 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r-> LAR= 0;
   r-> LFS = cc->window;
   r-> NFE = 0;
+  r->sentEOF = 0;
+  r->recvEOF = 0;
 
   rel_list = r;
 
@@ -97,6 +101,12 @@ rel_destroy (rel_t *r)
   conn_destroy (r->c);
   free(r);
   /* Free any other allocated memory here */
+}
+
+int check_close(rel_t * s){ //Still need to check for time condition!
+  if(s->SendQ == NULL && s->RecQ == NULL && s->sentEOF == 1 && s->recvEOF == 1)
+    return 1;
+  return 0;
 }
 
 
@@ -125,6 +135,12 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     return;
   }
   pkt->cksum = sum;
+  if(len == EOF_PACKET_SIZE){ //Check for closing conditions, need to change this to account for timer condition
+    if(check_close(r) == 1){
+      rel_destroy(r);
+      return;
+    }
+  }
   if(len == 8){
     uint32_t ackno = pkt -> ackno;
     queue * head = r-> SendQ;
@@ -200,7 +216,7 @@ rel_read (rel_t *s)
     if(newPacket == NULL)
       return;
     else if(newPacket->len == EOF_PACKET_SIZE){//check for -1 aka EOF
-      //Do something?
+      s->sentEOF =1;
     }
     send_prepare(newPacket);
     conn_sendpkt(s->c, newPacket, (size_t)newPacket->len);
