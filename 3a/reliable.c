@@ -15,14 +15,21 @@
 
 #include "rlib.h"
 
-
+  struct queue {
+  	queue * next;
+  	queue * prev;
+  	packet_t *pkt;
+  };
 
 struct reliable_state {
   rel_t *next;			/* Linked list for traversing all connections */
   rel_t **prev;
-
+  uint32_t LAR;
+  uint32_t LFS;
+  uint32_t NFE;
   conn_t *c;			/* This is the connection object */
-
+  queue * SendQ;
+  queue * RecQ;
   /* Add your own data fields below this */
 
 };
