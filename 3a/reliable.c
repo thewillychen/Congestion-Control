@@ -15,6 +15,9 @@
 
 #include "rlib.h"
 
+#define PACKET_DATA_MAX_SIZE 500
+#define EOF_PACKET_SIZE 12
+
 typedef struct queue queue;
 
  struct queue {
@@ -26,8 +29,9 @@ typedef struct queue queue;
 struct reliable_state {
   rel_t *next;			/* Linked list for traversing all connections */
   rel_t **prev;
+  uint32_t SWS;
   uint32_t LAR;
-  uint32_t LFS;
+  uint32_t LFS;   // increment this 
   uint32_t NFE;
   conn_t *c;			/* This is the connection object */
   queue * SendQ;
@@ -36,6 +40,10 @@ struct reliable_state {
 
 };
 rel_t *rel_list;
+
+//Helper function declarations
+void send_prepare(packet_t * packet);
+packet_t * create_data_packet(rel_t * s);
 
 
 int acktoSend;
@@ -67,6 +75,11 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r->prev = &rel_list;
   if (rel_list)
     rel_list->prev = &r->next;
+  r-> SWS = cc-> window;
+  r-> LAR= 0;
+  r-> LFS = cc->window;
+  r-> NFE = 0;
+
   rel_list = r;
 
   /* Do any other initialization you need here */
@@ -82,7 +95,7 @@ rel_destroy (rel_t *r)
     r->next->prev = r->prev;
   *r->prev = r->next;
   conn_destroy (r->c);
-
+  free(r);
   /* Free any other allocated memory here */
 }
 
@@ -105,12 +118,134 @@ rel_demux (const struct config_common *cc,
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
+  uint16_t sum = pkt-> cksum;
+  uint16_t len = pkt->len; 
+  pkt-> cksum = 0;
+  if(cksum(pkt, len)!= sum){
+    return;
+  }
+  pkt->cksum = sum;
+  if(len == 8){
+    uint32_t ackno = pkt -> ackno;
+    queue * head = r-> SendQ;
+    if(head == NULL){
+      return;
+    }
+    queue * current = head;
+    while(current != NULL){
+      if(current->pkt->seqno < ackno){
+        queue * temp = current -> prev;
+        if(temp != NULL){
+          temp -> next = head -> next;
+        }else{
+          head = current -> next;
+          r -> SendQ = head;
+        }
+        current -> next -> prev = temp;
+        temp = current;
+        current = current -> next;
+        free(temp);
+        r-> LAR = r-> LAR + 1;    
+      }
+  
+    }
+    
+    return;
+  }else if(len > 8){
+    uint32_t seqno = pkt -> seqno;
+    if(seqno < r->NFE && seqno >= r->NFE + r->SWS){
+      return;
+    }
+    queue * newpkt = (queue * )malloc(sizeof(struct queue));
+    newpkt -> pkt = pkt;
+    queue * head = r-> RecQ;
+    if(head == NULL){
+      r->RecQ = newpkt;
+    }else{
+      queue * current = head;
+      while(1){
+        if(current -> pkt -> seqno == seqno){
+          break;
+        }
+        if(current -> pkt -> seqno < seqno){
+          current = current -> next;
+          if(current -> next == NULL){
+            current -> next = newpkt;
+            break;
+          }
+        }else{
+          queue * temp = current -> prev;
+          if(temp != NULL){
+            temp -> next = newpkt;
+          } else{
+            r->RecQ = newpkt;
+          }
+          current -> next -> prev = newpkt;
+          newpkt -> next = current;
+          break;
+        }
+      }
+    }
+
+  }
+
 }
 
 
 void
 rel_read (rel_t *s)
 {
+  while(s->LFS - s->LAR <= s->SWS){
+    packet_t * newPacket = create_data_packet(s);
+    if(newPacket == NULL)
+      return;
+    else if(newPacket->len == EOF_PACKET_SIZE){//check for -1 aka EOF
+      //Do something?
+    }
+    send_prepare(newPacket);
+    conn_sendpkt(s->c, newPacket, (size_t)newPacket->len);
+    queue * sent = xmalloc(sizeof(queue));
+    sent->pkt = newPacket;
+    if(s->SendQ == NULL){
+      s->SendQ = sent;
+      s->SendQ->next = NULL;
+      s->SendQ->prev = NULL;
+    }else{
+      s->SendQ->prev = sent;
+      sent->next = s->SendQ;
+      sent->prev = NULL;
+      s->SendQ = sent;
+    }
+    s->LFS++;
+  }
+}
+
+packet_t * create_data_packet(rel_t * s){
+  packet_t *packet;
+  packet = xmalloc(sizeof(*packet));
+
+  int bytes = conn_input(s->c, packet->data, PACKET_DATA_MAX_SIZE);
+  if(bytes == 0){ //Nothing left to send so exit
+    free(packet);
+    return NULL;
+  }
+
+  if(bytes == -1){
+    packet->len = EOF_PACKET_SIZE;
+  }else{
+    packet->len = EOF_PACKET_SIZE + bytes;
+  }
+  packet->ackno = (uint32_t) 1;
+  packet->seqno=s->LFS+1;
+  return packet;
+}
+
+void send_prepare(packet_t * packet){
+  int length = packet->len;
+  packet->ackno = htonl(packet->ackno);
+  packet->seqno = htonl(packet->seqno);
+  packet->len = htons(packet->len);
+  packet->cksum = cksum(packet, length);
 }
 
 void
