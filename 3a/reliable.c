@@ -38,7 +38,7 @@ struct reliable_state {
 rel_t *rel_list;
 
 
-
+int acktoSend;
 
 
 /* Creates a new reliable protocol session, returns NULL on failure.
@@ -116,6 +116,45 @@ rel_read (rel_t *s)
 void
 rel_output (rel_t *r)
 {
+  conn_t * connection = r->c;
+  queue * recvQ = r->RecQ;
+
+  int ackno = -1;
+  while(recvQ != NULL) {
+    packet_t * packet = recvQ->pkt;
+    int seqno = packet->seqno;
+    if(r->NFE == seqno) {
+      int remainingBufSpace = conn_bufspace(connection);
+      char* data = packet->data;
+      int dataSize = sizeof(data);
+      if(dataSize <= remainingBufSpace) {
+        conn_output(connection, data, dataSize);
+        ackno = seqno + 1;
+        r->NFE = ackno;
+        r->RecQ = recvQ->next;
+        recvQ = recvQ->next;
+      }
+      else {
+        break;
+      }
+    }
+    else { 
+      break;
+    }
+    recvQ = recvQ->next;
+  }
+
+  if(ackno != -1) {
+    struct ack_packet acknowledgementPacket;
+    acknowledgementPacket.cksum = 0;
+    int ackSize = sizeof(struct ack_packet);
+    acknowledgementPacket.len = ackSize;
+    acknowledgementPacket.ackno = ackno;
+    uint16_t checkSum = cksum(&acknowledgementPacket, ackSize);
+    acknowledgementPacket.cksum = checkSum;
+    packet_t* convertedPtr = (packet_t*) &acknowledgementPacket;
+    conn_sendpkt(connection, convertedPtr, ackSize);
+  }
 }
 
 void
