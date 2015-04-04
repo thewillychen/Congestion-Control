@@ -15,7 +15,9 @@
 
 #include "rlib.h"
 
-  struct queue {
+typedef struct queue queue;
+
+ struct queue {
   	queue * next;
   	queue * prev;
   	packet_t *pkt;
