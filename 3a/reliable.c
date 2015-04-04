@@ -69,7 +69,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   if (rel_list)
     rel_list->prev = &r->next;
   r-> SWS = cc-> window;
-  r-> LAR= -1;
+  r-> LAR= 0;
   r-> LFS = cc->window;
   r-> NFE = 0;
 
@@ -111,6 +111,77 @@ rel_demux (const struct config_common *cc,
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
+  uint16_t sum = pkt-> cksum;
+  uint16_t len = pkt->len; 
+  pkt-> cksum = 0;
+  if(cksum(pkt, len)!= sum){
+    return;
+  }
+  pkt->cksum = sum;
+  if(len == 8){
+    uint32_t ackno = pkt -> ackno;
+    queue * head = r-> SendQ;
+    if(head == NULL){
+      return;
+    }
+    queue * current = head;
+    while(current != NULL){
+      if(current->pkt->seqno < ackno){
+        queue * temp = current -> prev;
+        if(temp != NULL){
+          temp -> next = head -> next;
+        }else{
+          head = current -> next;
+          r -> SendQ = head;
+        }
+        current -> next -> prev = temp;
+        temp = current;
+        current = current -> next;
+        free(temp);
+        r-> LAR = r-> LAR + 1;    
+      }
+  
+    }
+    
+    return;
+  }else if(len > 8){
+    uint32_t seqno = pkt -> seqno;
+    if(seqno < r->NFE && seqno >= r->NFE + r->SWS){
+      return;
+    }
+    queue * newpkt = (queue * )malloc(sizeof(struct queue));
+    newpkt -> pkt = pkt;
+    queue * head = r-> RecQ;
+    if(head == NULL){
+      r->RecQ = newpkt;
+    }else{
+      queue * current = head;
+      while(1){
+        if(current -> pkt -> seqno == seqno){
+          break;
+        }
+        if(current -> pkt -> seqno < seqno){
+          current = current -> next;
+          if(current -> next == NULL){
+            current -> next = newpkt;
+            break;
+          }
+        }else{
+          queue * temp = current -> prev;
+          if(temp != NULL){
+            temp -> next = newpkt;
+          } else{
+            r->RecQ = newpkt;
+          }
+          current -> next -> prev = newpkt;
+          newpkt -> next = current;
+          break;
+        }
+      }
+    }
+
+  }
+
 }
 
 
