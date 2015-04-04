@@ -26,6 +26,7 @@ typedef struct queue queue;
 struct reliable_state {
   rel_t *next;			/* Linked list for traversing all connections */
   rel_t **prev;
+  uint32_t SWS;
   uint32_t LAR;
   uint32_t LFS;
   uint32_t NFE;
@@ -67,6 +68,11 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r->prev = &rel_list;
   if (rel_list)
     rel_list->prev = &r->next;
+  r-> SWS = cc-> window;
+  r-> LAR= -1;
+  r-> LFS = cc->window;
+  r-> NFE = 0;
+
   rel_list = r;
 
   /* Do any other initialization you need here */
@@ -82,7 +88,7 @@ rel_destroy (rel_t *r)
     r->next->prev = r->prev;
   *r->prev = r->next;
   conn_destroy (r->c);
-
+  free(r);
   /* Free any other allocated memory here */
 }
 
