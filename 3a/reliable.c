@@ -15,6 +15,9 @@
 
 #include "rlib.h"
 
+#define PACKET_DATA_MAX_SIZE 500
+#define EOF_PACKET_SIZE 12
+
 typedef struct queue queue;
 
  struct queue {
@@ -28,7 +31,7 @@ struct reliable_state {
   rel_t **prev;
   uint32_t SWS;
   uint32_t LAR;
-  uint32_t LFS;
+  uint32_t LFS;   // increment this 
   uint32_t NFE;
   conn_t *c;			/* This is the connection object */
   queue * SendQ;
@@ -117,6 +120,57 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 void
 rel_read (rel_t *s)
 {
+  while(s->LFS - s->LAR <= s->SWS){
+    packet_t * newPacket = create_data_packet(s);
+    if(newPacket == NULL)
+      return;
+    else if(NewPacket->len == EOF_PACKET_SIZE){//check for -1 aka EOF
+      //Do something?
+    }
+    send_prepare(newPacket);
+    conn_sendpkt(s->c, newPacket, (size_t)newPacket->len);
+    queue * sent = xmalloc(sizeof(queue));
+    sent->pkt = newPacket;
+    if(s->sendQ == NULL){
+      sendQ = sent;
+      sendQ->next == NULL;
+      sendQ->prev == NULL;
+    }else{
+      sendQ->prev = sent;
+      sent->next = sendQ;
+      sent->prev = NULL;
+      sendQ = sent;
+    }
+    LFS++;
+  }
+}
+
+packet_t * create_data_packet(rel_t * s){
+  packet_t *packet;
+  packet = xmalloc(sizeof(*packet));
+
+  int bytes = conn_input(s->c, packet->data, PACKET_DATA_MAX_SIZE);
+  if(bytes == 0){ //Nothing left to send so exit
+    free(packet);
+    return NULL;
+  }
+
+  if(bytes == -1){
+    packet->len = EOF_PACKET_SIZE;
+  }else{
+    packet-> = EOF_PACKET_SIZE + bytes;
+  }
+  packet->ackno = (uint32_t) 1;
+  packet->seqno=LFS+1;
+  return packet;
+}
+
+void send_prepare(packet_t * packet){
+  int length = packet->len;
+  packet->ackno = htonl(packet->ackno);
+  packet->seqno = htonl(packet->seqno);
+  packet->len = htons(packet->len);
+  packet->cksum = cksum(packet, length);
 }
 
 void
