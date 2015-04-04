@@ -145,6 +145,10 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     uint32_t ackno = pkt -> ackno;
     queue * head = r-> SendQ;
     if(head == NULL){
+      if(check_close(r) == 1){
+        rel_destroy(r);
+        return;
+      }
       return;
     }
     queue * current = head;
@@ -163,7 +167,12 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         free(temp);
         r-> LAR = r-> LAR + 1;    
       }
-  
+    }
+    if(head == NULL){
+      if(check_close(r) == 1){
+        rel_destroy(r);
+        return;
+      }
     }
     
     return;
@@ -217,6 +226,10 @@ rel_read (rel_t *s)
       return;
     else if(newPacket->len == EOF_PACKET_SIZE){//check for -1 aka EOF
       s->sentEOF =1;
+      if(check_close(s) == 1){
+        rel_destroy(s);
+        return;
+      }
     }
     send_prepare(newPacket);
     conn_sendpkt(s->c, newPacket, (size_t)newPacket->len);
@@ -293,6 +306,10 @@ rel_output (rel_t *r)
       break;
     }
     recvQ = recvQ->next;
+  }
+  if(check_close(r) == 1){
+    rel_destroy(r);
+    return;
   }
 
   if(ackno != -1) {
