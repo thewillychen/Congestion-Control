@@ -235,7 +235,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         }
       }
     }
-
+      rel_output(r);
   }
 
 }
@@ -329,8 +329,10 @@ rel_output (rel_t *r)
         ackno = seqno + 1;
         r->NFE = ackno;
         r->RecQ = recvQ->next;
-        r->RecQ->prev = NULL;
-        recvQ = recvQ->next;
+        if(r->RecQ != NULL){
+          r->RecQ->prev = NULL;
+        }
+        recvQ = r->RecQ;
         free(packet);
       }
       else {
