@@ -319,15 +319,14 @@ rel_output (rel_t *r)
   }
 
   if(ackno != -1) {
-    struct ack_packet acknowledgementPacket = malloc(sizeof(struct ack_packet));
-    acknowledgementPacket.cksum = 0;
-    int ackSize = sizeof(struct ack_packet);
-    acknowledgementPacket.len = ackSize;
-    acknowledgementPacket.ackno = ackno;
-    uint16_t checkSum = cksum(&acknowledgementPacket, ackSize);
-    acknowledgementPacket.cksum = checkSum;
-    packet_t* convertedPtr = (packet_t*) &acknowledgementPacket;
-    conn_sendpkt(connection, convertedPtr, ackSize);
+    packet_t * acknowledgementPacket = (packet_t *) malloc(8);
+    acknowledgementPacket->cksum = 0;
+    uint16_t ackSize = 8;
+    acknowledgementPacket->len = ackSize;
+    acknowledgementPacket->ackno = ackno;
+    uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
+    acknowledgementPacket->cksum = checkSum;
+    conn_sendpkt(connection, acknowledgementPacket, ackSize);
   }
 }
 
