@@ -40,6 +40,7 @@ struct reliable_state {
   int sentEOF;
   int recvEOF;
   int timeout;
+  //timeval EOFsentTime; 
   /* Add your own data fields below this */
 
 };
@@ -85,6 +86,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r-> NFE = 0;
   r->sentEOF = 0;
   r->recvEOF = 0;
+  //r->EOFsentTime = -1;
   r -> timeout = cc -> timeout;
 
   rel_list = r;
@@ -107,7 +109,10 @@ rel_destroy (rel_t *r)
 }
 
 int check_close(rel_t * s){ //Still need to check for time condition!
-  if(s->SendQ == NULL && s->RecQ == NULL && s->sentEOF == 1 && s->recvEOF == 1)
+  timeval *currentTime = malloc(sizeof(timeval));
+  gettimeofday(currentTime,NULL);
+  //int timeSinceEOF = difference of EOFsentTime and currentTime as an int
+  if(s->SendQ == NULL && s->RecQ == NULL && s->sentEOF == 1 && s->recvEOF == 1) //&& timeSinceEOF >=2*s->timeout
     return 1;
   return 0;
 }
@@ -238,7 +243,7 @@ rel_read (rel_t *s)
     }
     send_prepare(newPacket);
     conn_sendpkt(s->c, newPacket, (size_t)newPacket->len);
-    queue * sent = xmalloc(sizeof(queue));
+    queue * sent = xmalloc(sizeof(queue));    
     sent->pkt = newPacket;
     if(s->SendQ == NULL){
       s->SendQ = sent;
@@ -250,6 +255,9 @@ rel_read (rel_t *s)
       sent->prev = NULL;
       s->SendQ = sent;
     }
+    gettimeofday(s->SendQ->transitionTime,NULL);
+    if(s->sentEOF == 1)
+      //gettimeofday(&(s->EOFsentTime,NULL));        
     s->LFS++;
   }
 }
