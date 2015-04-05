@@ -48,6 +48,7 @@ rel_t *rel_list;
 
 //Helper function declarations
 void send_prepare(packet_t * packet);
+void read_prepare(packet_t * packet);
 packet_t * create_data_packet(rel_t * s);
 int check_close(rel_t * s);
 int timeval_subtract(timeval * result, timeval * x, timeval * y);
@@ -83,8 +84,8 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
     rel_list->prev = &r->next;
   r-> SWS = cc-> window;
   r-> LAR= 0;
-  r-> LFS = cc->window;
-  r-> NFE = 0;
+  r-> LFS = 0;
+  r-> NFE = 1;
   r->sentEOF = 0;
   r->recvEOF = 0;
   r->EOFsentTime = malloc(sizeof(timeval));
@@ -147,11 +148,12 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
   printf("does this print");
   uint16_t sum = pkt-> cksum;
-  uint16_t len = pkt->len; 
+  uint16_t len = ntohs(pkt->len); 
   pkt-> cksum = 0;
   if(cksum(pkt, len)!= sum){
     return;
   }
+  read_prepare(pkt);
   pkt->cksum = sum;
   if(len == EOF_PACKET_SIZE){ //Check for closing conditions, need to change this to account for timer condition
     if(check_close(r) == 1){
@@ -203,6 +205,8 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     }
     queue * newpkt = (queue * )malloc(sizeof(struct queue));
     newpkt -> pkt = pkt;
+    newpkt->next = NULL;
+    newpkt->prev = NULL;
     queue * head = r-> RecQ;
     if(head == NULL){
       r->RecQ = newpkt;
@@ -300,6 +304,12 @@ void send_prepare(packet_t * packet){
   packet->cksum = cksum(packet, length);
 }
 
+void read_prepare(packet_t * packet){
+  packet->ackno = ntohl(packet->ackno);
+  packet->seqno = ntohl(packet->seqno);
+  packet->len = ntohs(packet->len);
+
+}
 void
 rel_output (rel_t *r)
 {
