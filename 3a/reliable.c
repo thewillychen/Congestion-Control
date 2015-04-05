@@ -62,6 +62,7 @@ rel_t *
 rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	    const struct config_common *cc)
 {
+  printf("print?");
   rel_t *r;
 
   r = xmalloc (sizeof (*r));
@@ -136,6 +137,7 @@ rel_demux (const struct config_common *cc,
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
+  printf("does this print");
   uint16_t sum = pkt-> cksum;
   uint16_t len = pkt->len; 
   pkt-> cksum = 0;
@@ -355,6 +357,7 @@ rel_timer ()
         gettimeofday(current -> transitionTime, NULL);
         conn_sendpkt(r->c, current -> pkt, (size_t)current->pkt -> len);
     }
+    current = current -> next;
   }
   free(t);
   free(diff);
