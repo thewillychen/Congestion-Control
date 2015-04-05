@@ -297,6 +297,7 @@ rel_output (rel_t *r)
         r->NFE = ackno;
         r->RecQ = recvQ->next;
         recvQ = recvQ->next;
+        free(packet);
       }
       else {
         break;
@@ -313,7 +314,7 @@ rel_output (rel_t *r)
   }
 
   if(ackno != -1) {
-    struct ack_packet acknowledgementPacket;
+    struct ack_packet acknowledgementPacket = malloc(sizeof(struct ack_packet));
     acknowledgementPacket.cksum = 0;
     int ackSize = sizeof(struct ack_packet);
     acknowledgementPacket.len = ackSize;
