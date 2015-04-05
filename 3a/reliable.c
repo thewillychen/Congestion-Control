@@ -40,7 +40,7 @@ struct reliable_state {
   int sentEOF;
   int recvEOF;
   int timeout;
-  //timeval EOFsentTime; 
+  timeval * EOFsentTime; 
   /* Add your own data fields below this */
 
 };
@@ -62,6 +62,7 @@ rel_t *
 rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	    const struct config_common *cc)
 {
+  printf("print?");
   rel_t *r;
 
   r = xmalloc (sizeof (*r));
@@ -86,7 +87,9 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r-> NFE = 0;
   r->sentEOF = 0;
   r->recvEOF = 0;
-  //r->EOFsentTime = -1;
+  r->EOFsentTime = malloc(sizeof(timeval));
+  r->EOFsentTime->tv_sec = (time_t)0;
+  r->EOFsentTime->tv_usec = (suseconds_t)0;
   r -> timeout = cc -> timeout;
 
   rel_list = r;
@@ -109,10 +112,16 @@ rel_destroy (rel_t *r)
 }
 
 int check_close(rel_t * s){ //Still need to check for time condition!
-  timeval *currentTime = malloc(sizeof(timeval));
-  gettimeofday(currentTime,NULL);
+  int timeSinceEOF =0;
+  if(s->sentEOF > 0){
+    timeval *currentTime = malloc(sizeof(timeval));
+    timeval *diff = malloc(sizeof(timeval));
+    gettimeofday(currentTime,NULL);
+    timeval_subtract(diff, currentTime, s-> EOFsentTime);
+    int timeSinceEOF = (diff->tv_sec + diff->tv_usec/1000000)/1000;
+  }
   //int timeSinceEOF = difference of EOFsentTime and currentTime as an int
-  if(s->SendQ == NULL && s->RecQ == NULL && s->sentEOF == 1 && s->recvEOF == 1) //&& timeSinceEOF >=2*s->timeout
+  if(s->SendQ == NULL && s->RecQ == NULL && s->sentEOF == 1 && s->recvEOF == 1 && timeSinceEOF >=2*s->timeout)
     return 1;
   return 0;
 }
@@ -136,6 +145,7 @@ rel_demux (const struct config_common *cc,
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
+  printf("does this print");
   uint16_t sum = pkt-> cksum;
   uint16_t len = pkt->len; 
   pkt-> cksum = 0;
@@ -257,7 +267,7 @@ rel_read (rel_t *s)
     }
     gettimeofday(s->SendQ->transitionTime,NULL);
     if(s->sentEOF == 1)
-      //gettimeofday(&(s->EOFsentTime,NULL));        
+      gettimeofday(s->EOFsentTime,NULL);        
     s->LFS++;
   }
 }
@@ -357,6 +367,7 @@ rel_timer ()
         gettimeofday(current -> transitionTime, NULL);
         conn_sendpkt(r->c, current -> pkt, (size_t)current->pkt -> len);
     }
+    current = current -> next;
   }
   free(t);
   free(diff);
