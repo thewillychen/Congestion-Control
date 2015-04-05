@@ -119,6 +119,8 @@ int check_close(rel_t * s){ //Still need to check for time condition!
     gettimeofday(currentTime,NULL);
     timeval_subtract(diff, currentTime, s-> EOFsentTime);
     int timeSinceEOF = (diff->tv_sec + diff->tv_usec/1000000)/1000;
+    free(currentTime);
+    free(diff);
   }
   //int timeSinceEOF = difference of EOFsentTime and currentTime as an int
   if(s->SendQ == NULL && s->RecQ == NULL && s->sentEOF == 1 && s->recvEOF == 1 && timeSinceEOF >=2*s->timeout)
