@@ -309,6 +309,7 @@ rel_output (rel_t *r)
         ackno = seqno + 1;
         r->NFE = ackno;
         r->RecQ = recvQ->next;
+        r->RecQ->prev = NULL;
         recvQ = recvQ->next;
         free(packet);
       }
@@ -330,11 +331,12 @@ rel_output (rel_t *r)
     packet_t * acknowledgementPacket = (packet_t *) malloc(8);
     acknowledgementPacket->cksum = 0;
     uint16_t ackSize = 8;
-    acknowledgementPacket->len = ackSize;
-    acknowledgementPacket->ackno = ackno;
+    acknowledgementPacket->len = htons(ackSize);
+    acknowledgementPacket->ackno = htonl(ackno);
     uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
     acknowledgementPacket->cksum = checkSum;
     conn_sendpkt(connection, acknowledgementPacket, ackSize);
+    free(acknowledgementPacket);
   }
 }
 
