@@ -41,6 +41,7 @@ struct reliable_state {
   int recvEOF;
   int timeout;
   timeval * EOFsentTime; 
+  int prevPacketFull;
   /* Add your own data fields below this */
 
 };
@@ -78,10 +79,13 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   }
 
   r->c = c;
-  r->next = NULL;
-  r->prev = NULL;
-  if (rel_list)
+  r->next = rel_list;
+  r->prev = &rel_list;
+  if (rel_list){
     rel_list->prev = &r->next;
+    fprintf(stderr, "prev %p\n", rel_list->prev);
+  }
+  rel_list = r;
   r-> SWS = cc-> window;
   r-> LAR= 0;
   r-> LFS = 0;
@@ -92,8 +96,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r->EOFsentTime->tv_sec = (time_t)0;
   r->EOFsentTime->tv_usec = (suseconds_t)0;
   r -> timeout = cc -> timeout;
-
-  rel_list = r;
+  r->prevPacketFull = 0;
 
   /* Do any other initialization you need here */
 
@@ -105,9 +108,9 @@ void
 rel_destroy (rel_t *r)
 {
   fprintf(stderr, "destroyed %p\n", r);
-  // if (r->next)
-  //   r->next->prev = r->prev;
-  // *r->prev = r->next;
+  if (r->next)
+     r->next->prev = r->prev;
+   *r->prev = r->next;
   conn_destroy (r->c);
   free(r);
   /* Free any other allocated memory here */
@@ -254,8 +257,9 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 void
 rel_read (rel_t *s)
 {
-
-  while(s->LFS - s->LAR <= s->SWS){
+  //s = rel_list;
+  fprintf(stderr, "rel read s pointer: %p , rel_list point : %p\n",s,rel_list );
+  if(s->LFS - s->LAR <= s->SWS && s->prevPacketFull != 1){
     fprintf(stderr, "rel read in while, %p\n",s );
     packet_t * newPacket = create_data_packet(s);
     if(newPacket == NULL){
@@ -287,6 +291,7 @@ rel_read (rel_t *s)
       gettimeofday(s->EOFsentTime,NULL);        
     s->LFS++;
   }
+  s->prevPacketFull =0;
   fprintf(stderr, "rel read done\n");
 }
 
@@ -296,6 +301,7 @@ packet_t * create_data_packet(rel_t * s){
   fprintf(stderr, "rel create%p, %p\n", s, packet->data);
   int bytes = conn_input(s->c, packet->data, PACKET_DATA_MAX_SIZE);
   fprintf(stderr, "conn input didnt segfault%p, %p, %d\n", s, packet->data, bytes);
+
   if(bytes == 0){ //Nothing left to send so exit
     free(packet);
     return NULL;
@@ -305,6 +311,10 @@ packet_t * create_data_packet(rel_t * s){
     packet->len = EOF_PACKET_SIZE;
   }else{
     packet->len = EOF_PACKET_SIZE + bytes;
+    if(packet->len <(PACKET_DATA_MAX_SIZE+EOF_PACKET_SIZE)){
+    s->prevPacketFull = 1;
+    fprintf(stderr, "reaches end of input");
+    }
   }
   packet->ackno = (uint32_t) 1;
   packet->seqno=s->LFS+1;
