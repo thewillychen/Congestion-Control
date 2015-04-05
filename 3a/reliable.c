@@ -19,11 +19,12 @@
 #define EOF_PACKET_SIZE 12
 
 typedef struct queue queue;
-
+typedef struct timeval timeval;
  struct queue {
   	queue * next;
   	queue * prev;
   	packet_t *pkt;
+    timeval * transitionTime;
   };
 
 struct reliable_state {
@@ -38,7 +39,8 @@ struct reliable_state {
   queue * RecQ;
   int sentEOF;
   int recvEOF;
-  timeval EOFsentTime; 
+  int timeout;
+  //timeval EOFsentTime; 
   /* Add your own data fields below this */
 
 };
@@ -48,7 +50,7 @@ rel_t *rel_list;
 void send_prepare(packet_t * packet);
 packet_t * create_data_packet(rel_t * s);
 int check_close(rel_t * s);
-
+int timeval_subtract(timeval * result, timeval * x, timeval * y);
 int acktoSend;
 
 
@@ -84,7 +86,8 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r-> NFE = 0;
   r->sentEOF = 0;
   r->recvEOF = 0;
-  r->EOFsentTime = -1;
+  //r->EOFsentTime = -1;
+  r -> timeout = cc -> timeout;
 
   rel_list = r;
 
@@ -106,8 +109,8 @@ rel_destroy (rel_t *r)
 }
 
 int check_close(rel_t * s){ //Still need to check for time condition!
-  timeval currentTime = malloc(sizeof(timeval));
-  gettimeofday(&currentTime,NULL);
+  timeval *currentTime = malloc(sizeof(timeval));
+  gettimeofday(currentTime,NULL);
   //int timeSinceEOF = difference of EOFsentTime and currentTime as an int
   if(s->SendQ == NULL && s->RecQ == NULL && s->sentEOF == 1 && s->recvEOF == 1) //&& timeSinceEOF >=2*s->timeout
     return 1;
@@ -161,7 +164,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
       if(current->pkt->seqno < ackno){
         queue * temp = current -> prev;
         if(temp != NULL){
-          temp -> next = head -> next;
+          temp -> next = current -> next;
         }else{
           head = current -> next;
           r -> SendQ = head;
@@ -171,6 +174,8 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         current = current -> next;
         free(temp);
         r-> LAR = r-> LAR + 1;    
+      }else{
+        current = current -> next;
       }
     }
     if(head == NULL){
@@ -250,9 +255,9 @@ rel_read (rel_t *s)
       sent->prev = NULL;
       s->SendQ = sent;
     }
-    gettimeofday(&(s->SendQ->time),NULL);
+    gettimeofday(s->SendQ->transitionTime,NULL);
     if(s->sentEOF == 1)
-      gettimeofday(&(s->EOFsentTime,NULL));        
+      //gettimeofday(&(s->EOFsentTime,NULL));        
     s->LFS++;
   }
 }
@@ -338,5 +343,46 @@ void
 rel_timer ()
 {
   /* Retransmit any packets that need to be retransmitted */
-
+  rel_t * r = rel_list;
+  queue * head = r -> SendQ;
+  queue * current = head; 
+  timeval * t = malloc(sizeof(struct timeval));
+  timeval * diff = malloc(sizeof(struct timeval));
+  gettimeofday(t, NULL);
+  while(current!=NULL){
+    timeval_subtract(diff, t, current -> transitionTime);
+    int timediff = (diff->tv_sec + diff->tv_usec/1000000)/1000;
+    if(timediff > r->timeout){
+        gettimeofday(current -> transitionTime, NULL);
+        conn_sendpkt(r->c, current -> pkt, (size_t)current->pkt -> len);
+    }
+  }
+  free(t);
+  free(diff);
 }
+
+int
+timeval_subtract (result, x, y)
+     struct timeval *result, *x, *y;
+{
+  /* Perform the carry for the later subtraction by updating y. */
+  if (x->tv_usec < y->tv_usec) {
+    int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
+    y->tv_usec -= 1000000 * nsec;
+    y->tv_sec += nsec;
+  }
+  if (x->tv_usec - y->tv_usec > 1000000) {
+    int nsec = (x->tv_usec - y->tv_usec) / 1000000;
+    y->tv_usec += 1000000 * nsec;
+    y->tv_sec -= nsec;
+  }
+
+  /* Compute the time remaining to wait.
+     tv_usec is certainly positive. */
+  result->tv_sec = x->tv_sec - y->tv_sec;
+  result->tv_usec = x->tv_usec - y->tv_usec;
+
+  /* Return 1 if result is negative. */
+  return x->tv_sec < y->tv_sec;
+}
+
