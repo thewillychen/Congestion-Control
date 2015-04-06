@@ -166,6 +166,9 @@ void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
 //  printf("does this print");
+    FILE * output = fopen("output.txt", "a");
+  fprintf(output, "relrecv");
+  fclose(output);
   r = rel_list;
   uint16_t sum = pkt-> cksum;
   uint16_t len = ntohs(pkt->len); 
@@ -175,9 +178,9 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     return;
   }
   read_prepare(pkt);
-  // FILE * output = fopen("output.txt", "a");
-  // fprintf(output, "recvpkt len %d  \n", len);
-  // fclose(output);
+  output = fopen("output.txt", "a");
+  fprintf(output, "recvpkt len %d  \n", len);
+  fclose(output);
   pkt->cksum = sum;
   if(len == EOF_PACKET_SIZE){ //Check for closing conditions, need to change this to account for timer condition
     if(check_close(r) == 1){
@@ -197,7 +200,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         r->sentPackets[i].valid = -1;
         r->LAR = (r->LAR)+ 1;
       }
-      fprintf(stderr, "%d\n", r->sentPackets[i].valid);
+      fprintf(stderr, "%d seqno %d \n", r->sentPackets[i].valid, r->sentPackets[i].pkt->seqno);
     }
   // FILE * output = fopen("output.txt", "a");
   // fprintf(output, "ack rec %d  \n", ackno);
@@ -271,15 +274,24 @@ rel_read (rel_t *s)
     int length = newPacket->len;
     send_prepare(newPacket);
     conn_sendpkt(s->c, newPacket, (size_t)length);
+    read_prepare(newPacket);
     int i;
     for(i =0; i < s->SWS; i++){
+
       if(s->sentPackets[i].valid < 1){
         s->sentPackets[i].valid = 1;
         //gettimeofday(s->sentPackets[i].transmissionTime,NULL);
         s->sentPackets[i].timeCount = 0;
-        memcpy(s->sentPackets[i].pkt, &newPacket, length);
+
+        //memcpy(s->sentPackets[i].pkt, &newPacket, length);
+        s->sentPackets[i].pkt = newPacket;
+        FILE * output = fopen("output.txt", "a");
+        fprintf(output, "relread");
+        fclose(output);
+        
         break;
       }
+
     }
 
     //queue *sent = malloc(sizeof(queue));    
@@ -288,6 +300,7 @@ rel_read (rel_t *s)
       gettimeofday(s->EOFsentTime,NULL);        
     s->LFS++;
   }
+
   //s->prevPacketFull =0;
   fprintf(stderr, "rel read done\n");
 }
