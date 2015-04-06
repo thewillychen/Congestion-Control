@@ -193,12 +193,14 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     }
   }
   if(len == 8){
+    fprintf(stderr, "Ack Received: %d\n", pkt->ackno);
     int ackno = pkt->ackno;
     int i;
     for(i = 0; i<r->SWS; i++){
       if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno < ackno){
         r->sentPackets[i].valid = -1;
         r->LAR = (r->LAR)+ 1;
+        break;
       }
       fprintf(stderr, "%d seqno %d \n", r->sentPackets[i].valid, r->sentPackets[i].pkt->seqno);
     }
@@ -258,7 +260,7 @@ rel_read (rel_t *s)
 {
   //s = rel_list;
   fprintf(stderr, "rel read s pointer: %p , rel_list point : %p\n",s,rel_list );
-  if(s->LFS - s->LAR <= s->SWS){ //&& s->prevPacketFull != 1){
+  while(s->LFS - s->LAR <= s->SWS){ //&& s->prevPacketFull != 1){
     fprintf(stderr, "rel read in while, %p\n",s );
     packet_t * newPacket = create_data_packet(s);
     if(newPacket == NULL){
@@ -272,6 +274,7 @@ rel_read (rel_t *s)
       }
     }
     int length = newPacket->len;
+    fprintf(stderr,"Sent packet: %s\n", newPacket->data);
     send_prepare(newPacket);
     conn_sendpkt(s->c, newPacket, (size_t)length);
     read_prepare(newPacket);
@@ -308,9 +311,9 @@ rel_read (rel_t *s)
 packet_t * create_data_packet(rel_t * s){
   packet_t *packet;
   packet = (packet_t*)malloc(sizeof(packet_t));
-  fprintf(stderr, "rel create%p, %p\n", s, packet->data);
+  fprintf(stderr, "rel create %p, %p\n", s, packet->data);
   int bytes = conn_input(s->c, packet->data, PACKET_DATA_MAX_SIZE);
-  fprintf(stderr, "conn input didnt segfault%p, %p, %d\n", s, packet->data, bytes);
+  //fprintf(stderr, "conn input didnt segfault%p, %p, %d\n", s, packet->data, bytes);
 
   if(bytes == 0){ //Nothing left to send so exit
     free(packet);
