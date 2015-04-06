@@ -153,7 +153,7 @@ void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
 //  printf("does this print");
-
+  r = rel_list;
   uint16_t sum = pkt-> cksum;
   uint16_t len = ntohs(pkt->len); 
   pkt-> cksum = 0;
@@ -162,26 +162,38 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     return;
   }
   read_prepare(pkt);
-    FILE * output = fopen("output.txt", "a");
-  fprintf(output, "recvpkt%p %d %d \n", r, pkt->ackno, pkt->len);
+  FILE * output = fopen("output.txt", "a");
+  fprintf(output, "recvpkt len %d  \n", len);
   fclose(output);
   pkt->cksum = sum;
   if(len == EOF_PACKET_SIZE){ //Check for closing conditions, need to change this to account for timer condition
     if(check_close(r) == 1){
+          FILE * output = fopen("output.txt", "a");
+          fprintf(output, "closed %d \n", pkt->ackno);
+         fclose(output);
       rel_destroy(r);
       fprintf(stderr, "eof rec\n");
       return;
     }
   }
   if(len == 8){
+    FILE * output = fopen("output.txt", "a");
+    fprintf(output, "ack rec %d head %p\n", pkt->ackno, rel_list->SendQ);
+    fclose(output);
     uint32_t ackno = pkt -> ackno;
     queue * head = rel_list-> SendQ;
     if(head == NULL){
       fprintf(stderr, "sendq null\n");
       if(check_close(r) == 1){
         rel_destroy(r);
+        FILE * output = fopen("output.txt", "a");
+        fprintf(output, "closed %d \n", pkt->ackno);
+        fclose(output);
         return;
       }
+        FILE * output = fopen("output.txt", "a");
+        fprintf(output, "ack is null %d \n", pkt->ackno);
+        fclose(output);
       return;
     }
     queue * current = head;
@@ -213,6 +225,9 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     fprintf(stderr, "rec ack\n");
     return;
   }else if(len > 8){
+    FILE * output = fopen("output.txt", "a");
+    fprintf(output, "seqno %d NFE %d SWS %d\n", pkt->seqno, r->NFE, r->SWS);
+    fclose(output);
     uint32_t seqno = pkt -> seqno;
     if(seqno < r->NFE && seqno >= r->NFE + r->SWS){
       return;
