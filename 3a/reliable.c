@@ -166,9 +166,9 @@ void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
 //  printf("does this print");
-    FILE * output = fopen("output.txt", "a");
-  fprintf(output, "relrecv");
-  fclose(output);
+  //   FILE * output = fopen("output.txt", "a");
+  // fprintf(output, "relrecv");
+  // fclose(output);
   r = rel_list;
   uint16_t sum = pkt-> cksum;
   uint16_t len = ntohs(pkt->len); 
@@ -178,9 +178,9 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     return;
   }
   read_prepare(pkt);
-  output = fopen("output.txt", "a");
-  fprintf(output, "recvpkt len %d  \n", len);
-  fclose(output);
+//  output = fopen("output.txt", "a");
+//  fprintf(output, "recvpkt len %d  \n", len);
+ // fclose(output);
   pkt->cksum = sum;
   if(len == EOF_PACKET_SIZE){ //Check for closing conditions, need to change this to account for timer condition
     if(check_close(r) == 1){
@@ -188,30 +188,35 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
          //  fprintf(output, "closed %d \n", pkt->ackno);
          // fclose(output);
       rel_destroy(r);
-      fprintf(stderr, "eof rec\n");
+  //    fprintf(output, "eof rec\n");
       return;
     }
   }
+//  fclose(output);
   if(len == 8){
-    fprintf(stderr, "Ack Received: %d\n", pkt->ackno);
+    //FILE* output = fopen("output.txt", "a");
+   // fprintf(output, "Ack Received: %d\n", 1);
     int ackno = pkt->ackno;
     int i;
     for(i = 0; i<r->SWS; i++){
       if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno < ackno){
         r->sentPackets[i].valid = -1;
-        fprintf(stderr, "Incrementing LAR: %d\n", r->LAR);
+    //    fprintf(output, "Incrementing LAR: %d\n", r->LAR);
         //r->LAR = (r->LAR)+ 1;
-        r->LAR = ackno;
-        fprintf(stderr, "Incremented LAR: %d\n", r->LAR);
-        break;
+   
+      //  fprintf(output, "Incremented LAR: %d\n", r->LAR);
+        //break;
       }
-      fprintf(stderr, "%d seqno %d \n", r->sentPackets[i].valid, r->sentPackets[i].pkt->seqno);
+     
+     // fprintf(output, "%d seqno %d \n", r->sentPackets[i].valid, r->sentPackets[i].pkt->seqno);
     }
-    for(i=0; i <r->SWS; i++){
-      if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno < ackno){
-        r->sentPackets[i].valid = -1;
-      }
-    }
+    r->LAR = ackno -1;
+    // for(i=0; i <r->SWS; i++){
+    //   if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno < ackno){
+    //     r->sentPackets[i].valid = -1;
+    //   }
+    // }
+    //fclose(output);
     rel_read(r);
   // FILE * output = fopen("output.txt", "a");
   // fprintf(output, "ack rec %d  \n", ackno);
@@ -298,9 +303,9 @@ rel_read (rel_t *s)
 
         //memcpy(s->sentPackets[i].pkt, &newPacket, length);
         s->sentPackets[i].pkt = newPacket;
-        FILE * output = fopen("output.txt", "a");
-        fprintf(output, "relread");
-        fclose(output);
+        // FILE * output = fopen("output.txt", "a");
+        // fprintf(output, "relread");
+        // fclose(output);
         
         break;
       }
