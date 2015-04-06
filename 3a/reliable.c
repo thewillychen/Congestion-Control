@@ -27,13 +27,13 @@ typedef struct timeval timeval;
     timeval * transitionTime;
   };
 
-  typedef struct sentPacket;
+  typedef struct sentPacket sentPacket;
 
   struct sentPacket {
     packet_t *pkt;
     timeval * transmissionTime;
     int valid;
-  }
+  };
 
 
 struct reliable_state {
@@ -191,53 +191,13 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     }
   }
   if(len == 8){
-    FILE * output = fopen("output.txt", "a");
-    fprintf(output, "ack rec %d head %p\n", pkt->ackno, rel_list->SendQ);
-    fclose(output);
-    uint32_t ackno = pkt -> ackno;
-    queue * head = rel_list-> SendQ;
-    if(head == NULL){
-      fprintf(stderr, "sendq null\n");
-      if(check_close(r) == 1){
-        rel_destroy(r);
-        FILE * output = fopen("output.txt", "a");
-        fprintf(output, "closed %d \n", pkt->ackno);
-        fclose(output);
-        return;
-      }
-        FILE * output = fopen("output.txt", "a");
-        fprintf(output, "ack is null %d \n", pkt->ackno);
-        fclose(output);
-      return;
-    }
-    queue * current = head;
-    while(current->transitionTime != NULL){
-      if(current->pkt->seqno < ackno){
-        queue * temp = current -> prev;
-        if(temp != NULL){
-          temp -> next = current -> next;
-        }else{
-          head = current -> next;
-          rel_list -> SendQ = head;
-        }
-        current -> next -> prev = temp;
-        temp = current;
-        current = current -> next;
-        free(temp);
-        rel_list-> LAR = rel_list-> LAR + 1;    
-      }else{
-        current = current -> next;
+    int ackno = pkt->ackno;
+    int i;
+    for(i = 0; i<r->SWS; i++){
+      if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno < ackno){
+        r->sentPackets[i].valid = -1;
       }
     }
-    if(head == NULL){
-      fprintf(stderr, "sendq null\n");
-      if(check_close(r) == 1){
-        rel_destroy(r);
-        return;
-      }
-    }
-    fprintf(stderr, "rec ack\n");
-    return;
   }else if(len > 8){
     FILE * output = fopen("output.txt", "a");
     fprintf(output, "seqno %d NFE %d SWS %d\n", pkt->seqno, r->NFE, r->SWS);
@@ -260,11 +220,11 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
           break;
         }
         if(current -> pkt -> seqno < seqno){
-          current = current -> next;
           if(current -> next == NULL){
             current -> next = newpkt;
             break;
           }
+            current = current -> next;
         }else{
           queue * temp = current -> prev;
           if(temp != NULL){
@@ -432,19 +392,19 @@ rel_timer ()
 {
   /* Retransmit any packets that need to be retransmitted */
   rel_t * r = rel_list;
-  queue * head = r -> SendQ;
-  queue * current = head; 
+
   timeval * t = malloc(sizeof(struct timeval));
   timeval * diff = malloc(sizeof(struct timeval));
   gettimeofday(t, NULL);
-  while(current!=NULL && current->transitionTime != NULL){
-    timeval_subtract(diff, t, current -> transitionTime);
+  int i;
+  for(i = 0; i < r->SWS; i++){
+    timeval_subtract(diff, t, r->sentPackets[i].transmissionTime);
     int timediff = (diff->tv_sec + diff->tv_usec/1000000)/1000;
     if(timediff > r->timeout){
-        gettimeofday(current -> transitionTime, NULL);
-        conn_sendpkt(r->c, current -> pkt, (size_t)current->pkt -> len);
+        gettimeofday(r->sentPackets[i].transmissionTime, NULL);
+        conn_sendpkt(r->c, r->sentPackets[i].pkt, (size_t)r->sentPackets[i].pkt -> len);
     }
-    current = current -> next;
+    
   }
   free(t);
   free(diff);
