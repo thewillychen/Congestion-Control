@@ -42,6 +42,7 @@ struct reliable_state {
   int timeout;
   timeval * EOFsentTime; 
   int prevPacketFull;
+  queue * SendQend;
   /* Add your own data fields below this */
 
 };
@@ -92,6 +93,9 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r-> NFE = 1;
   r->sentEOF = 0;
   r->recvEOF = 0;
+  r->SendQ = malloc(r->SWS * sizeof(queue));
+  r->SendQ->transitionTime =NULL;
+  r->SendQend = NULL;
   r->EOFsentTime = malloc(sizeof(timeval));
   r->EOFsentTime->tv_sec = (time_t)0;
   r->EOFsentTime->tv_usec = (suseconds_t)0;
@@ -123,7 +127,7 @@ int check_close(rel_t * s){ //Still need to check for time condition!
     timeval *diff = malloc(sizeof(timeval));
     gettimeofday(currentTime,NULL);
     timeval_subtract(diff, currentTime, s-> EOFsentTime);
-    int timeSinceEOF = (diff->tv_sec + diff->tv_usec/1000000)/1000;
+    timeSinceEOF = (diff->tv_sec + diff->tv_usec/1000000)/1000;
     free(currentTime);
     free(diff);
   }
@@ -182,7 +186,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
       return;
     }
     queue * current = head;
-    while(current != NULL){
+    while(current->transitionTime != NULL){
       if(current->pkt->seqno < ackno){
         queue * temp = current -> prev;
         if(temp != NULL){
@@ -257,9 +261,9 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 void
 rel_read (rel_t *s)
 {
-  //s = rel_list;
+  s = rel_list;
   fprintf(stderr, "rel read s pointer: %p , rel_list point : %p\n",s,rel_list );
-  if(s->LFS - s->LAR <= s->SWS && s->prevPacketFull != 1){
+  if(s->LFS - s->LAR <= s->SWS){ //&& s->prevPacketFull != 1){
     fprintf(stderr, "rel read in while, %p\n",s );
     packet_t * newPacket = create_data_packet(s);
     if(newPacket == NULL){
@@ -274,24 +278,26 @@ rel_read (rel_t *s)
     }
     send_prepare(newPacket);
     conn_sendpkt(s->c, newPacket, (size_t)newPacket->len);
-    queue * sent = malloc(sizeof(queue));    
+    queue *sent = malloc(sizeof(queue));    
     sent->pkt = newPacket;
-    if(s->SendQ == NULL){
-      s->SendQ = sent;
+    if(s->SendQend == NULL){
+      memcpy(&s->SendQ, &sent, sizeof(queue));
       s->SendQ->next = NULL;
       s->SendQ->prev = NULL;
+      s->SendQend = s->SendQ;
     }else{
-      s->SendQ->prev = sent;
-      sent->next = s->SendQ;
-      sent->prev = NULL;
-      s->SendQ = sent;
+      memcpy(&s->SendQend->next, &sent, sizeof(queue));
+      s->SendQend->next->next = NULL;
+      s->SendQend->next->prev = s->SendQend;
+      s->SendQend = s->SendQend->next;
     }
-    gettimeofday(s->SendQ->transitionTime,NULL);
+    gettimeofday(s->SendQend->transitionTime,NULL);
+    free(sent);
     if(s->sentEOF == 1)
       gettimeofday(s->EOFsentTime,NULL);        
     s->LFS++;
   }
-  s->prevPacketFull =0;
+  //s->prevPacketFull =0;
   fprintf(stderr, "rel read done\n");
 }
 
@@ -397,7 +403,7 @@ rel_timer ()
   timeval * t = malloc(sizeof(struct timeval));
   timeval * diff = malloc(sizeof(struct timeval));
   gettimeofday(t, NULL);
-  while(current!=NULL){
+  while(current!=NULL && current->transitionTime != NULL){
     timeval_subtract(diff, t, current -> transitionTime);
     int timediff = (diff->tv_sec + diff->tv_usec/1000000)/1000;
     if(timediff > r->timeout){
