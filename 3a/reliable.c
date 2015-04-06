@@ -27,13 +27,13 @@ typedef struct timeval timeval;
     timeval * transitionTime;
   };
 
-  typedef struct sentPacket;
+  typedef struct sentPacket sentPacket;
 
   struct sentPacket {
     packet_t *pkt;
     timeval * transmissionTime;
     int valid;
-  }
+  };
 
 
 struct reliable_state {
@@ -52,7 +52,7 @@ struct reliable_state {
   timeval * EOFsentTime; 
   int prevPacketFull;
   //queue * SendQend;
-  sentPacket sentPackets[];
+  sentPacket ** sentPackets;
   /* Add your own data fields below this */
 
 };
@@ -103,9 +103,8 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r-> NFE = 1;
   r->sentEOF = 0;
   r->recvEOF = 0;
-  r->SendQ = malloc(r->SWS * sizeof(queue));
-  r->SendQ->transitionTime =NULL;
-  r->SendQend = NULL;
+  sentPacket* tempSentPackets[r->SWS];
+  r->sentPackets = tempSentPackets;
   r->EOFsentTime = malloc(sizeof(timeval));
   r->EOFsentTime->tv_sec = (time_t)0;
   r->EOFsentTime->tv_usec = (suseconds_t)0;
@@ -289,7 +288,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 void
 rel_read (rel_t *s)
 {
-  s = rel_list;
+  //s = rel_list;
   fprintf(stderr, "rel read s pointer: %p , rel_list point : %p\n",s,rel_list );
   if(s->LFS - s->LAR <= s->SWS){ //&& s->prevPacketFull != 1){
     fprintf(stderr, "rel read in while, %p\n",s );
@@ -304,23 +303,21 @@ rel_read (rel_t *s)
         return;
       }
     }
+    int length = newPacket->len;
     send_prepare(newPacket);
-    conn_sendpkt(s->c, newPacket, (size_t)newPacket->len);
-    queue *sent = malloc(sizeof(queue));    
-    sent->pkt = newPacket;
-    if(s->SendQend == NULL){
-      memcpy(&s->SendQ, &sent, sizeof(queue));
-      s->SendQ->next = NULL;
-      s->SendQ->prev = NULL;
-      s->SendQend = s->SendQ;
-    }else{
-      memcpy(&s->SendQend->next, &sent, sizeof(queue));
-      s->SendQend->next->next = NULL;
-      s->SendQend->next->prev = s->SendQend;
-      s->SendQend = s->SendQend->next;
+    conn_sendpkt(s->c, newPacket, (size_t)length);
+    int i;
+    for(i =0; i < s->SWS; i++){
+      if(s->sentPackets[i].valid < 1){
+        s->sentPackets[i].valid = 1;
+        gettimeofday(s->sentPackets[i].transmissionTime,NULL);
+        memcpy(s->sentPackets[i].pkt, &newPacket, length);
+        break;
+      }
     }
-    gettimeofday(s->SendQend->transitionTime,NULL);
-    free(sent);
+
+    //queue *sent = malloc(sizeof(queue));    
+    //free(sent);
     if(s->sentEOF == 1)
       gettimeofday(s->EOFsentTime,NULL);        
     s->LFS++;
