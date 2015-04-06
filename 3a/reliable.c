@@ -27,6 +27,15 @@ typedef struct timeval timeval;
     timeval * transitionTime;
   };
 
+  typedef struct sentPacket;
+
+  struct sentPacket {
+    packet_t *pkt;
+    timeval * transmissionTime;
+    int valid;
+  }
+
+
 struct reliable_state {
   rel_t *next;			/* Linked list for traversing all connections */
   rel_t **prev;
@@ -42,7 +51,8 @@ struct reliable_state {
   int timeout;
   timeval * EOFsentTime; 
   int prevPacketFull;
-  queue * SendQend;
+  //queue * SendQend;
+  sentPacket sentPackets[];
   /* Add your own data fields below this */
 
 };
