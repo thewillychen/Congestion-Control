@@ -52,7 +52,7 @@ struct reliable_state {
   timeval * EOFsentTime; 
   int prevPacketFull;
   //queue * SendQend;
-  sentPacket ** sentPackets;
+  sentPacket * sentPackets;
   /* Add your own data fields below this */
 
 };
@@ -103,8 +103,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r-> NFE = 1;
   r->sentEOF = 0;
   r->recvEOF = 0;
-  sentPacket* tempSentPackets[r->SWS];
-  r->sentPackets = tempSentPackets;
+  r->sentPackets =(sentPacket*) malloc(sizeof(sentPacket)*r->SWS);
   r->EOFsentTime = malloc(sizeof(timeval));
   r->EOFsentTime->tv_sec = (time_t)0;
   r->EOFsentTime->tv_usec = (suseconds_t)0;
