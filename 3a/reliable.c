@@ -199,11 +199,20 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     for(i = 0; i<r->SWS; i++){
       if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno < ackno){
         r->sentPackets[i].valid = -1;
-        r->LAR = (r->LAR)+ 1;
+        fprintf(stderr, "Incrementing LAR: %d\n", r->LAR);
+        //r->LAR = (r->LAR)+ 1;
+        r->LAR = ackno;
+        fprintf(stderr, "Incremented LAR: %d\n", r->LAR);
         break;
       }
       fprintf(stderr, "%d seqno %d \n", r->sentPackets[i].valid, r->sentPackets[i].pkt->seqno);
     }
+    for(i=0; i <r->SWS; i++){
+      if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno < ackno){
+        r->sentPackets[i].valid = -1;
+      }
+    }
+    rel_read(r);
   // FILE * output = fopen("output.txt", "a");
   // fprintf(output, "ack rec %d  \n", ackno);
   // fclose(output);
@@ -259,8 +268,9 @@ void
 rel_read (rel_t *s)
 {
   //s = rel_list;
-  fprintf(stderr, "rel read s pointer: %p , rel_list point : %p\n",s,rel_list );
-  while(s->LFS - s->LAR <= s->SWS){ //&& s->prevPacketFull != 1){
+  //fprintf(stderr, "rel read s pointer: %p , rel_list point : %p\n",s,rel_list );
+  fprintf(stderr,"Last frame sent: %d, Last ack Recv: %d, sws: %d\n", s->LFS, s->LAR, s->SWS);
+  if(s->LFS - s->LAR <= s->SWS){ //&& s->prevPacketFull != 1){
     fprintf(stderr, "rel read in while, %p\n",s );
     packet_t * newPacket = create_data_packet(s);
     if(newPacket == NULL){
@@ -311,7 +321,7 @@ rel_read (rel_t *s)
 packet_t * create_data_packet(rel_t * s){
   packet_t *packet;
   packet = (packet_t*)malloc(sizeof(packet_t));
-  fprintf(stderr, "rel create %p, %p\n", s, packet->data);
+  fprintf(stderr, "Creating packets %p, %p\n", s, packet->data);
   int bytes = conn_input(s->c, packet->data, PACKET_DATA_MAX_SIZE);
   //fprintf(stderr, "conn input didnt segfault%p, %p, %d\n", s, packet->data, bytes);
 
