@@ -348,7 +348,7 @@ rel_output (rel_t *r)
     if(r->NFE == seqno) {
       int remainingBufSpace = conn_bufspace(connection);
       char* data = packet->data;
-      int dataSize = sizeof(data);
+      int dataSize = packet->len - 12;
       if(dataSize <= remainingBufSpace) {
         conn_output(connection, data, dataSize);
         ackno = seqno + 1;
