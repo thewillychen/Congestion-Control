@@ -153,7 +153,7 @@ void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
 //  printf("does this print");
-  fprintf(stderr, "recvpkt%p\n", r);
+
   uint16_t sum = pkt-> cksum;
   uint16_t len = ntohs(pkt->len); 
   pkt-> cksum = 0;
@@ -162,6 +162,9 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     return;
   }
   read_prepare(pkt);
+    FILE * output = fopen("output.txt", "a");
+  fprintf(output, "recvpkt%p %d %d \n", r, pkt->ackno, pkt->len);
+  fclose(output);
   pkt->cksum = sum;
   if(len == EOF_PACKET_SIZE){ //Check for closing conditions, need to change this to account for timer condition
     if(check_close(r) == 1){
@@ -340,6 +343,9 @@ rel_output (rel_t *r)
 {
   conn_t * connection = r->c;
   queue * recvQ = r->RecQ;
+          FILE * output = fopen("output.txt", "a");
+        fprintf(output, "output reached");
+        fclose(output);
 
   int ackno = -1;
   while(recvQ != NULL) {
@@ -350,6 +356,9 @@ rel_output (rel_t *r)
       char* data = packet->data;
       int dataSize = packet->len - 12;
       if(dataSize <= remainingBufSpace) {
+        FILE * output = fopen("output.txt", "a");
+        fprintf(output, "output seqno: %d NFE: %d \n",packet -> seqno, r->NFE);
+        fclose(output);
         conn_output(connection, data, dataSize);
         ackno = seqno + 1;
         r->NFE = ackno;
