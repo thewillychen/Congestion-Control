@@ -50,7 +50,7 @@ struct reliable_state {
   int sentEOF;
   int recvEOF;
   int timeout;
-  timeval * EOFsentTime; 
+  int EOFsentTime; 
   int prevPacketFull;
   //queue * SendQend;
   sentPacket * sentPackets;
@@ -105,9 +105,8 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r->sentEOF = 0;
   r->recvEOF = 0;
   r->sentPackets =(sentPacket*) malloc(sizeof(sentPacket)*r->SWS);
-  r->EOFsentTime = malloc(sizeof(timeval));
-  r->EOFsentTime->tv_sec = (time_t)0;
-  r->EOFsentTime->tv_usec = (suseconds_t)0;
+  r->EOFsentTime = 0;
+
   r -> timeout = cc -> timeout;
   r->prevPacketFull = 0;
 
@@ -132,13 +131,13 @@ rel_destroy (rel_t *r)
 int check_close(rel_t * s){ //Still need to check for time condition!
   int timeSinceEOF =0;
   if(s->sentEOF > 0){
-    timeval *currentTime = malloc(sizeof(timeval));
-    timeval *diff = malloc(sizeof(timeval));
-    gettimeofday(currentTime,NULL);
-    timeval_subtract(diff, currentTime, s-> EOFsentTime);
-    timeSinceEOF = (diff->tv_sec + diff->tv_usec/1000000)/1000;
-    free(currentTime);
-    free(diff);
+    // timeval *currentTime = malloc(sizeof(timeval));
+    // timeval *diff = malloc(sizeof(timeval));
+    // gettimeofday(currentTime,NULL);
+    // timeval_subtract(diff, currentTime, s-> EOFsentTime);
+    // timeSinceEOF = (diff->tv_sec + diff->tv_usec/1000000)/1000;
+    // free(currentTime);
+    // free(diff);
   }
   //int timeSinceEOF = difference of EOFsentTime and currentTime as an int
   if(s->SendQ == NULL && s->RecQ == NULL && s->sentEOF == 1 && s->recvEOF == 1 && timeSinceEOF >=2*s->timeout)
@@ -165,9 +164,9 @@ rel_demux (const struct config_common *cc,
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
-//  printf("does this print");
-  //   FILE * output = fopen("output.txt", "a");
-  // fprintf(output, "relrecv");
+ //printf("does this print");
+  // FILE * output = fopen("output.txt", "a");
+  // fprintf(output, "relrecv %d", getpid());
   // fclose(output);
   r = rel_list;
   uint16_t sum = pkt-> cksum;
@@ -183,14 +182,17 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
  // fclose(output);
   pkt->cksum = sum;
   if(len == EOF_PACKET_SIZE){ //Check for closing conditions, need to change this to account for timer condition
+  // fprintf(stderr, "is this getting called bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \n");
     if(check_close(r) == 1){
          //  FILE * output = fopen("output.txt", "a");
          //  fprintf(output, "closed %d \n", pkt->ackno);
          // fclose(output);
+    fprintf(stderr, "is this getting called bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \n");
       rel_destroy(r);
   //    fprintf(output, "eof rec\n");
       return;
     }
+    return;
   }
 //  fclose(output);
   if(len == 8){
@@ -226,7 +228,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     // fprintf(output, "seqno %d NFE %d SWS %d\n", pkt->seqno, r->NFE, r->SWS);
     // fclose(output);
     uint32_t seqno = pkt -> seqno;
-    if(seqno < r->NFE && seqno >= r->NFE + r->SWS){
+    if(seqno < r->NFE || seqno >= r->NFE + r->SWS){
       return;
     }
     queue * newpkt = (queue * )malloc(sizeof(struct queue));
@@ -263,9 +265,11 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     }
 
       rel_output(r);
-      fprintf(stderr, "rec data to out\n");
+      fprintf(stderr, "rec data to out seq %d NFE %d\n", seqno, r->NFE);
   }
-
+  // FILE * output = fopen("output.txt", "a");
+  // fprintf(output, "relrecv %d", getpid());
+  // fclose(output);
 }
 
 
@@ -283,7 +287,9 @@ rel_read (rel_t *s)
       return;
     }else if(newPacket->len == EOF_PACKET_SIZE){//check for -1 aka EOF
       s->sentEOF =1;
+   //   fprintf(stderr, "is this getting called aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \n");
       if(check_close(s) == 1){
+     //   fprintf(stderr, "is this getting called aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \n");
         rel_destroy(s);
         return;
       }
@@ -314,8 +320,8 @@ rel_read (rel_t *s)
 
     //queue *sent = malloc(sizeof(queue));    
     //free(sent);
-    if(s->sentEOF == 1)
-      gettimeofday(s->EOFsentTime,NULL);        
+    // if(s->sentEOF == 1)
+    //   gettimeofday(s->EOFsentTime,NULL);        
     s->LFS++;
   }
 
@@ -437,10 +443,19 @@ rel_timer ()
     //fprintf(stderr, "%d\n", timediff);
     //if(timediff > r->timeout && r->sentPackets[i].valid ==1){
     if(r->sentPackets[i].valid == 1) {
+        if(r->sentPackets[i].pkt-> len == EOF_PACKET_SIZE){
+          r->EOFsentTime = r->EOFsentTime +1;
+        }
         if(r->sentPackets[i].timeCount >= 5) {
           //gettimeofday(r->sentPackets[i].transmissionTime, NULL);
           r->sentPackets[i].timeCount = 0;
-          conn_sendpkt(r->c, r->sentPackets[i].pkt, (size_t)r->sentPackets[i].pkt -> len);
+          int len = r->sentPackets[i].pkt->len;
+          r->sentPackets[i].pkt->ackno = htonl(r->sentPackets[i].pkt->ackno);
+          r->sentPackets[i].pkt->seqno = htonl(r->sentPackets[i].pkt->seqno);
+          r->sentPackets[i].pkt->len = htons(r->sentPackets[i].pkt->len);
+          
+          conn_sendpkt(r->c, r->sentPackets[i].pkt, (size_t)len);
+          read_prepare(r->sentPackets[i].pkt);
         }
         else{
           r->sentPackets[i].timeCount = r->sentPackets[i].timeCount + 1;
