@@ -33,6 +33,7 @@ typedef struct timeval timeval;
     packet_t *pkt;
     timeval * transmissionTime;
     int valid;
+    int timeCount;
   };
 
 
@@ -194,7 +195,9 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     for(i = 0; i<r->SWS; i++){
       if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno < ackno){
         r->sentPackets[i].valid = -1;
+        r->LAR = (r->LAR)+ 1;
       }
+      fprintf(stderr, "%d\n", r->sentPackets[i].valid);
     }
   // FILE * output = fopen("output.txt", "a");
   // fprintf(output, "ack rec %d  \n", ackno);
@@ -272,7 +275,8 @@ rel_read (rel_t *s)
     for(i =0; i < s->SWS; i++){
       if(s->sentPackets[i].valid < 1){
         s->sentPackets[i].valid = 1;
-        gettimeofday(s->sentPackets[i].transmissionTime,NULL);
+        //gettimeofday(s->sentPackets[i].transmissionTime,NULL);
+        s->sentPackets[i].timeCount = 0;
         memcpy(s->sentPackets[i].pkt, &newPacket, length);
         break;
       }
@@ -392,21 +396,30 @@ rel_timer ()
   /* Retransmit any packets that need to be retransmitted */
   rel_t * r = rel_list;
 
-  timeval * t = malloc(sizeof(struct timeval));
-  timeval * diff = malloc(sizeof(struct timeval));
-  gettimeofday(t, NULL);
+  // timeval * t = malloc(sizeof(struct timeval));
+  // timeval * diff = malloc(sizeof(struct timeval));
+  // gettimeofday(t, NULL);
   int i;
   for(i = 0; i < r->SWS; i++){
-    timeval_subtract(diff, t, r->sentPackets[i].transmissionTime);
-    int timediff = (diff->tv_sec + diff->tv_usec/1000000)/1000;
-    if(timediff > r->timeout && r->sentPackets[i].valid ==1){
-        gettimeofday(r->sentPackets[i].transmissionTime, NULL);
-        conn_sendpkt(r->c, r->sentPackets[i].pkt, (size_t)r->sentPackets[i].pkt -> len);
+    //timeval_subtract(diff, t, r->sentPackets[i].transmissionTime);
+    //int timediff = (diff->tv_sec + diff->tv_usec/1000000)/1000;
+    //fprintf(stderr, "%d\n", timediff);
+    //if(timediff > r->timeout && r->sentPackets[i].valid ==1){
+    if(r->sentPackets[i].valid == 1) {
+        if(r->sentPackets[i].timeCount >= 5) {
+          //gettimeofday(r->sentPackets[i].transmissionTime, NULL);
+          r->sentPackets[i].timeCount = 0;
+          conn_sendpkt(r->c, r->sentPackets[i].pkt, (size_t)r->sentPackets[i].pkt -> len);
+        }
+        else{
+          r->sentPackets[i].timeCount = r->sentPackets[i].timeCount + 1;
+        }
     }
+
     
   }
-  free(t);
-  free(diff);
+  //free(t);
+  //free(diff);
 }
 
 int
