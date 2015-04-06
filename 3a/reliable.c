@@ -174,15 +174,15 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     return;
   }
   read_prepare(pkt);
-  FILE * output = fopen("output.txt", "a");
-  fprintf(output, "recvpkt len %d  \n", len);
-  fclose(output);
+  // FILE * output = fopen("output.txt", "a");
+  // fprintf(output, "recvpkt len %d  \n", len);
+  // fclose(output);
   pkt->cksum = sum;
   if(len == EOF_PACKET_SIZE){ //Check for closing conditions, need to change this to account for timer condition
     if(check_close(r) == 1){
-          FILE * output = fopen("output.txt", "a");
-          fprintf(output, "closed %d \n", pkt->ackno);
-         fclose(output);
+         //  FILE * output = fopen("output.txt", "a");
+         //  fprintf(output, "closed %d \n", pkt->ackno);
+         // fclose(output);
       rel_destroy(r);
       fprintf(stderr, "eof rec\n");
       return;
@@ -196,10 +196,13 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         r->sentPackets[i].valid = -1;
       }
     }
+  // FILE * output = fopen("output.txt", "a");
+  // fprintf(output, "ack rec %d  \n", ackno);
+  // fclose(output);
   }else if(len > 8){
-    FILE * output = fopen("output.txt", "a");
-    fprintf(output, "seqno %d NFE %d SWS %d\n", pkt->seqno, r->NFE, r->SWS);
-    fclose(output);
+    // FILE * output = fopen("output.txt", "a");
+    // fprintf(output, "seqno %d NFE %d SWS %d\n", pkt->seqno, r->NFE, r->SWS);
+    // fclose(output);
     uint32_t seqno = pkt -> seqno;
     if(seqno < r->NFE && seqno >= r->NFE + r->SWS){
       return;
@@ -330,9 +333,9 @@ rel_output (rel_t *r)
 {
   conn_t * connection = r->c;
   queue * recvQ = r->RecQ;
-          FILE * output = fopen("output.txt", "a");
-        fprintf(output, "output reached");
-        fclose(output);
+        //   FILE * output = fopen("output.txt", "a");
+        // fprintf(output, "output reached");
+        // fclose(output);
 
   int ackno = -1;
   while(recvQ != NULL) {
@@ -343,9 +346,9 @@ rel_output (rel_t *r)
       char* data = packet->data;
       int dataSize = packet->len - 12;
       if(dataSize <= remainingBufSpace) {
-        FILE * output = fopen("output.txt", "a");
-        fprintf(output, "output seqno: %d NFE: %d \n",packet -> seqno, r->NFE);
-        fclose(output);
+        // FILE * output = fopen("output.txt", "a");
+        // fprintf(output, "output seqno: %d NFE: %d \n",packet -> seqno, r->NFE);
+        // fclose(output);
         conn_output(connection, data, dataSize);
         ackno = seqno + 1;
         r->NFE = ackno;
@@ -396,7 +399,7 @@ rel_timer ()
   for(i = 0; i < r->SWS; i++){
     timeval_subtract(diff, t, r->sentPackets[i].transmissionTime);
     int timediff = (diff->tv_sec + diff->tv_usec/1000000)/1000;
-    if(timediff > r->timeout){
+    if(timediff > r->timeout && r->sentPackets[i].valid ==1){
         gettimeofday(r->sentPackets[i].transmissionTime, NULL);
         conn_sendpkt(r->c, r->sentPackets[i].pkt, (size_t)r->sentPackets[i].pkt -> len);
     }
