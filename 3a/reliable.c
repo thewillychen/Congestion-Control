@@ -76,7 +76,7 @@ rel_t *
 rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	    const struct config_common *cc)
 {
-  fprintf(stderr, "create\n");
+//  fprintf(stderr, "create\n");
   rel_t *r;
 
   r = xmalloc (sizeof (*r));
@@ -95,7 +95,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r->prev = &rel_list;
   if (rel_list){
     rel_list->prev = &r->next;
-    fprintf(stderr, "prev %p\n", rel_list->prev);
+  //  fprintf(stderr, "prev %p\n", rel_list->prev);
   }
   rel_list = r;
   r-> SWS = cc-> window;
@@ -112,14 +112,14 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 
   /* Do any other initialization you need here */
 
-  fprintf(stderr, "createexit\n");
+  //fprintf(stderr, "createexit\n");
   return r;
 }
 
 void
 rel_destroy (rel_t *r)
 {
-  fprintf(stderr, "destroyed %p\n", r);
+  //fprintf(stderr, "destroyed %p\n", r);
   if (r->next)
      r->next->prev = r->prev;
    *r->prev = r->next;
@@ -138,7 +138,7 @@ int check_close(rel_t * s){ //Still need to check for time condition!
     }
   }
   //int timeSinceEOF = difference of EOFsentTime and currentTime as an int
-  fprintf(stderr, "%d %d %d %d %d %d\n",check, s->RecQ==NULL, s->sentEOF, s->recvEOF, s->EOFsentTime, getpid());
+  //fprintf(stderr, "%d %d %d %d %d %d\n",check, s->RecQ==NULL, s->sentEOF, s->recvEOF, s->EOFsentTime, getpid());
   if(check && s->RecQ == NULL && s->sentEOF == 1 && s->recvEOF == 1 && s->EOFsentTime >=10)
     return 1;
   return 0;
@@ -163,21 +163,34 @@ rel_demux (const struct config_common *cc,
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
- //printf("does this print");
+ // fprintf(stderr,"rec in id %d \n",getpid());
   // FILE * output = fopen("output.txt", "a");
   // fprintf(output, "relrecv %d", getpid());
   // fclose(output);
   r = rel_list;
+
+  // if(pkt==NULL){
+  //   fprintf(stderr,"rec done no pkt id %d \n",getpid());
+  //   return;
+  // }
+
   uint16_t sum = pkt-> cksum;
   uint16_t len = ntohs(pkt->len); 
+
   pkt-> cksum = 0;
-  if(cksum(pkt, len)!= sum){
-    fprintf(stderr, "cksum fail\n");
+  if( (len<8 || len <=512) && cksum(pkt, len)!= sum){
+  //    fprintf(stderr,"cksum fail length %d id %d seqno %d NFE %d\n",len,getpid(), ntohl(pkt->seqno), r->NFE);
     return;
   }
+  // if((len<8 || len <=512)){
+  //   fprintf(stderr,"rec bad length id %d \n",getpid());
+  //   return;
+  // }
+
   read_prepare(pkt);
+  //fprintf(stderr,"rec length %d id %d seqno %d NFE %d\n",len,getpid(), pkt->seqno, r->NFE);
 //  output = fopen("output.txt", "a");
- fprintf(stderr, "recvpkt len %d  seqno %d id %d\n", len, pkt->seqno, getpid());
+// fprintf(stderr, "recvpkt len %d  seqno %d id %d\n", len, pkt->seqno, getpid());
  // fclose(output);
   pkt->cksum = sum;
  //Check for closing conditions, need to change this to account for timer condition
@@ -199,15 +212,17 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
   //   //  return;
   // }
 //  fclose(output);
+ //    fprintf(stderr, "rec mid len %d id %d\n",len, getpid());
   if(len == 8){
+
     //FILE* output = fopen("output.txt", "a");
-    fprintf(stderr, "Ack Received: %d\n", pkt->ackno);
+    //fprintf(stderr, "Ack Received: %d\n", pkt->ackno);
     int ackno = pkt->ackno;
     int i;
     for(i = 0; i<r->SWS; i++){
       if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno < ackno){
         r->sentPackets[i].valid = -1;
-    //    fprintf(output, "Incrementing LAR: %d\n", r->LAR);
+    //   fprintf(stderr, "Recieved ack %d id %d valid %d \n", ackno, getpid(), r->sentPackets[i].valid);
         //r->LAR = (r->LAR)+ 1;
    
       //  fprintf(output, "Incremented LAR: %d\n", r->LAR);
@@ -227,15 +242,26 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
   // FILE * output = fopen("output.txt", "a");
   // fprintf(output, "ack rec %d  \n", ackno);
   // fclose(output);
-  }else if(len > 8){
+  }else if(len > 8 && len<=512){
     // FILE * output = fopen("output.txt", "a");
     // fprintf(output, "seqno %d NFE %d SWS %d\n", pkt->seqno, r->NFE, r->SWS);
     // fclose(output);
 //   fprintf(stderr,"here \n");
     uint32_t seqno = pkt -> seqno;
-     fprintf(stderr,"here %d\n", seqno);
-    if((seqno < r->NFE || seqno >= (r->NFE + r->SWS))){
-      fprintf(stderr,"dropping seqno %d NFE%d\n", seqno, r->NFE);
+    //fprintf(stderr,"here %d id %d\n", seqno, getpid());
+    if((seqno < r->NFE)){
+        packet_t * acknowledgementPacket = (packet_t *) malloc(8);
+        acknowledgementPacket->cksum = 0;
+        uint16_t ackSize = 8;
+        acknowledgementPacket->len = htons(ackSize);
+        acknowledgementPacket->ackno = htonl(r->NFE);
+        uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
+        acknowledgementPacket->cksum = checkSum;
+        conn_sendpkt(r->c, acknowledgementPacket, ackSize);
+        free(acknowledgementPacket);
+    } 
+    if(seqno >= (r->NFE + r->SWS)){
+      //fprintf(stderr,"dropping seqno %d NFE%d\n", seqno, r->NFE);
       return;
     }
     queue * newpkt = (queue * )malloc(sizeof(struct queue));
@@ -270,26 +296,28 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         }
       }
     }
-    queue * current = r->RecQ;
-    if(current == NULL){
-           fprintf(stderr,"null q");
-    }
-      while(current!=NULL){
-        if(current->pkt!=NULL){
-          fprintf(stderr, " recq %d ",current->pkt->seqno);
-        }else{
-          fprintf(stderr,"null pkt");
-          }
-          current = current->next;
-        }
+    // queue * current = r->RecQ;
+    // if(current == NULL){
+    //   //     fprintf(stderr,"null q");
+    // }
+    //   while(current!=NULL){
+    //     if(current->pkt!=NULL){
+    //       fprintf(stderr, " recq %d ",current->pkt->seqno);
+    //     }else{
+    //       fprintf(stderr,"null pkt");
+    //       }
+    //       current = current->next;
+    //     }
       
-      fprintf(stderr, "\n");
+    //   fprintf(stderr, "id %d\n",getpid());
       rel_output(r);
-      fprintf(stderr, "rec data to out seq %d NFE %d\n", seqno, r->NFE);
+      //fprintf(stderr, "rec data to out seq %d NFE %d\n", seqno, r->NFE);
    }
+   //  fprintf(stderr, "rec fin len %d id %d\n",len, getpid());
   // FILE * output = fopen("output.txt", "a");
   // fprintf(output, "relrecv %d", getpid());
   // fclose(output);
+   //fprintf(stderr,"rec closed id %d \n",getpid());
 }
 
 
@@ -297,8 +325,8 @@ void
 rel_read (rel_t *s)
 {
   //s = rel_list;
-  //fprintf(stderr, "rel read s pointer: %p , rel_list point : %p\n",s,rel_list );
-  fprintf(stderr,"Last frame sent: %d, Last ack Recv: %d, sws: %d sentEOF %d id %d\n", s->LFS, s->LAR, s->SWS, s->sentEOF, getpid());
+  //fprintf(stderr, "rel read in %d\n",getpid());
+  //fprintf(stderr,"Last frame sent: %d, Last ack Recv: %d, sws: %d sentEOF %d id %d\n", s->LFS, s->LAR, s->SWS, s->sentEOF, getpid());
   if(s->LFS - s->LAR < s->SWS && s->sentEOF!=1){ //&& s->prevPacketFull != 1){
  //   fprintf(stderr, "rel read in while, %p\n",s );
     packet_t * newPacket = create_data_packet(s);
@@ -309,19 +337,20 @@ rel_read (rel_t *s)
     }else if(newPacket->len == EOF_PACKET_SIZE){//check for -1 aka EOF
   
       s->sentEOF =1;
-      fprintf(stderr, "is this getting called aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa %d \n", getpid());
+//      fprintf(stderr, "is this getting called aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa %d \n", getpid());
       
 
     }
     int length = newPacket->len;
-    fprintf(stderr,"Sent packet: %s\n", newPacket->data);
+  //  fprintf(stderr,"Sent packet: %s\n", newPacket->data);
     send_prepare(newPacket);
     conn_sendpkt(s->c, newPacket, (size_t)length);
     read_prepare(newPacket);
     int i;
     for(i =0; i < s->SWS; i++){
-
+      //fprintf(stderr, "valid %d  \n",s->sentPackets[i].valid);
       if(s->sentPackets[i].valid < 1){
+     //   fprintf(stderr, "putting in queue seqno %d id %d valid %d v seqno %d \n", newPacket->seqno, getpid(), s->sentPackets[i].valid, s->sentPackets[i].pkt->seqno);
         s->sentPackets[i].valid = 1;
         //gettimeofday(s->sentPackets[i].transmissionTime,NULL);
         s->sentPackets[i].timeCount = 0;
@@ -331,7 +360,8 @@ rel_read (rel_t *s)
         // FILE * output = fopen("output.txt", "a");
         // fprintf(output, "relread");
         // fclose(output);
-        
+        //        fprintf(stderr, "putting in queue seqno %d id %d valid %d v seqno %d \n", newPacket->seqno, getpid(), s->sentPackets[i].valid, s->sentPackets[i].pkt->seqno);
+
         break;
       }
 
@@ -349,13 +379,13 @@ rel_read (rel_t *s)
   }
 
   //s->prevPacketFull =0;
-  fprintf(stderr, "rel read done\n");
+  //fprintf(stderr, "rel read done %d\n", getpid());
 }
 
 packet_t * create_data_packet(rel_t * s){
   packet_t *packet;
   packet = (packet_t*)malloc(sizeof(packet_t));
-  fprintf(stderr, "Creating packets %p, %s\n", s, packet->data);
+  //fprintf(stderr, "Creating packets %p, %s\n", s, packet->data);
   int bytes = conn_input(s->c, packet->data, PACKET_DATA_MAX_SIZE);
  // fprintf(stderr, "conn input didnt segfault%p, %p, %d\n", s, packet->data, bytes);
 
@@ -370,7 +400,7 @@ packet_t * create_data_packet(rel_t * s){
     packet->len = EOF_PACKET_SIZE + bytes;
     if(packet->len <(PACKET_DATA_MAX_SIZE+EOF_PACKET_SIZE)){
     s->prevPacketFull = 1;
-    fprintf(stderr, "reaches end of input len %d \n", packet->len);
+   // fprintf(stderr, "reaches end of input len %d \n", packet->len);
     }
   }
   packet->ackno = (uint32_t) 1;
@@ -400,12 +430,12 @@ rel_output (rel_t *r)
         //   FILE * output = fopen("output.txt", "a");
         // fprintf(output, "output reached");
         // fclose(output);
-
+  //fprintf(stderr, "out id %d\n", getpid());
   int ackno = -1;
   while(recvQ != NULL) {
     packet_t * packet = recvQ->pkt;
     int seqno = packet->seqno;
-    fprintf(stderr, "here NFE %d seqno %d reof %d id %d", r->NFE, seqno, r->recvEOF, getpid());
+  //  fprintf(stderr, "here NFE %d seqno %d reof %d id %d", r->NFE, seqno, r->recvEOF, getpid());
     if(r->NFE == seqno) {
 
       int remainingBufSpace = conn_bufspace(connection);
@@ -415,9 +445,9 @@ rel_output (rel_t *r)
         // FILE * output = fopen("output.txt", "a");
         // fprintf(output, "output seqno: %d NFE: %d \n",packet -> seqno, r->NFE);
         // fclose(output);
-        fprintf(stderr,"here \n");
+    //    fprintf(stderr,"here \n");
         if(r->recvEOF != 1){
-         fprintf(stderr, "data %s datasize %d id %d\n",data , dataSize, getpid());
+      //   fprintf(stderr, "data %s datasize %d id %d\n",data , dataSize, getpid());
          conn_output(connection, data, dataSize);
         }
        if(packet->len == EOF_PACKET_SIZE ){
@@ -455,6 +485,7 @@ rel_output (rel_t *r)
 
 
   if(ackno != -1) {
+  //  fprintf(stderr, "sending ack %d  \n",ackno);
     packet_t * acknowledgementPacket = (packet_t *) malloc(8);
     acknowledgementPacket->cksum = 0;
     uint16_t ackSize = 8;
@@ -470,6 +501,7 @@ rel_output (rel_t *r)
     rel_destroy(r);
     return;
   }
+ // fprintf(stderr, "out done ackno %d NFE %d id %d\n",ackno, r->NFE, getpid() );
 }
 
 void
@@ -493,7 +525,7 @@ rel_timer ()
 
     if(r->sentPackets[i].valid == 1) {
        //       fprintf(stderr, "%d  timecount %d i %d\n", r->sentPackets[i].pkt->seqno, r->sentPackets[i].timeCount,i);
-          fprintf(stderr, "%d\n", r->sentPackets[i].pkt->seqno);
+          //fprintf(stderr, "%d\n", r->sentPackets[i].pkt->seqno);
 
         if(r->sentPackets[i].timeCount >= 5) {
           //gettimeofday(r->sentPackets[i].transmissionTime, NULL);
@@ -502,7 +534,8 @@ rel_timer ()
           r->sentPackets[i].pkt->ackno = htonl(r->sentPackets[i].pkt->ackno);
           r->sentPackets[i].pkt->seqno = htonl(r->sentPackets[i].pkt->seqno);
           r->sentPackets[i].pkt->len = htons(r->sentPackets[i].pkt->len);
-          
+          r->sentPackets[i].pkt->cksum = 0;
+          r->sentPackets[i].pkt->cksum = cksum(r->sentPackets[i].pkt,len);
           conn_sendpkt(r->c, r->sentPackets[i].pkt, (size_t)len);
           read_prepare(r->sentPackets[i].pkt);
         }
@@ -521,28 +554,4 @@ rel_timer ()
   //free(diff);
 }
 
-int
-timeval_subtract (result, x, y)
-     struct timeval *result, *x, *y;
-{
-  /* Perform the carry for the later subtraction by updating y. */
-  if (x->tv_usec < y->tv_usec) {
-    int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
-    y->tv_usec -= 1000000 * nsec;
-    y->tv_sec += nsec;
-  }
-  if (x->tv_usec - y->tv_usec > 1000000) {
-    int nsec = (x->tv_usec - y->tv_usec) / 1000000;
-    y->tv_usec += 1000000 * nsec;
-    y->tv_sec -= nsec;
-  }
-
-  /* Compute the time remaining to wait.
-     tv_usec is certainly positive. */
-  result->tv_sec = x->tv_sec - y->tv_sec;
-  result->tv_usec = x->tv_usec - y->tv_usec;
-
-  /* Return 1 if result is negative. */
-  return x->tv_sec < y->tv_sec;
-}
 
