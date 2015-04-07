@@ -15,18 +15,57 @@
 
 #include "rlib.h"
 
+#define PACKET_DATA_MAX_SIZE 500
+#define EOF_PACKET_SIZE 12
 
+typedef struct queue queue;
+typedef struct timeval timeval;
+ struct queue {
+    queue * next;
+    queue * prev;
+    packet_t *pkt;
+    timeval * transitionTime;
+  };
+
+  typedef struct sentPacket sentPacket;
+
+  struct sentPacket {
+    packet_t *pkt;
+    timeval * transmissionTime;
+    int valid;
+    int timeCount;
+  };
 
 struct reliable_state {
-
-  conn_t *c;			/* This is the connection object */
-
+  rel_t *next;      /* Linked list for traversing all connections */
+  rel_t **prev;
+  uint32_t SWS;
+  uint32_t LAR;
+  uint32_t LFS;   // increment this 
+  uint32_t NFE;
+  conn_t *c;      /* This is the connection object */
+  queue * SendQ;
+  queue * RecQ;
+  int sentEOF;
+  int recvEOF;
+  int timeout;
+  int EOFsentTime; 
+  int prevPacketFull;
+  //queue * SendQend;
+  sentPacket * sentPackets;
   /* Add your own data fields below this */
 
 };
+
 rel_t *rel_list;
 
-
+//Helper function declarations
+void send_prepare(packet_t * packet);
+void read_prepare(packet_t * packet);
+packet_t * create_data_packet(rel_t * s);
+int check_close(rel_t * s);
+int timeval_subtract(timeval * result, timeval * x, timeval * y);
+int acktoSend;
 
 
 
@@ -52,19 +91,40 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   }
 
   r->c = c;
+  r->next = rel_list;
+  r->prev = &rel_list;
+  if (rel_list){
+    rel_list->prev = &r->next;
+  //  fprintf(stderr, "prev %p\n", rel_list->prev);
+  }
   rel_list = r;
+  r-> SWS = cc-> window;
+  r-> LAR= 0;
+  r-> LFS = 0;
+  r-> NFE = 1;
+  r->sentEOF = 0;
+  r->recvEOF = 0;
+  r->sentPackets =(sentPacket*) malloc(sizeof(sentPacket)*r->SWS);
+  r->EOFsentTime = 0;
+
+  r -> timeout = cc -> timeout;
+  r->prevPacketFull = 0;
 
   /* Do any other initialization you need here */
 
-
+  //fprintf(stderr, "createexit\n");
   return r;
 }
 
 void
 rel_destroy (rel_t *r)
 {
+  //fprintf(stderr, "destroyed %p\n", r);
+  if (r->next)
+     r->next->prev = r->prev;
+   *r->prev = r->next;
   conn_destroy (r->c);
-
+  free(r);
   /* Free any other allocated memory here */
 }
 
@@ -80,6 +140,82 @@ rel_demux (const struct config_common *cc,
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
+
+  r = rel_list;
+
+  uint16_t sum = pkt-> cksum;
+  uint16_t len = ntohs(pkt->len); 
+
+  pkt-> cksum = 0;
+  if( (len<8 || len <=512) && cksum(pkt, len)!= sum){
+    return;
+  }
+
+  read_prepare(pkt);
+  pkt->cksum = sum;
+
+  if(len == 8){
+    int ackno = pkt->ackno;
+    int i;
+    for(i = 0; i<r->SWS; i++){
+      if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno < ackno){
+        r->sentPackets[i].valid = -1;
+      }
+     
+    }
+    r->LAR = ackno -1;
+    rel_read(r);
+  }else if(len > 8 && len<=512){
+    uint32_t seqno = pkt -> seqno;
+    if((seqno < r->NFE)){
+        packet_t * acknowledgementPacket = (packet_t *) malloc(8);
+        acknowledgementPacket->cksum = 0;
+        uint16_t ackSize = 8;
+        acknowledgementPacket->len = htons(ackSize);
+        acknowledgementPacket->ackno = htonl(r->NFE);
+        uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
+        acknowledgementPacket->cksum = checkSum;
+        conn_sendpkt(r->c, acknowledgementPacket, ackSize);
+        free(acknowledgementPacket);
+    } 
+    if(seqno >= (r->NFE + r->SWS)){
+      //fprintf(stderr,"dropping seqno %d NFE%d\n", seqno, r->NFE);
+      return;
+    }
+    queue * newpkt = (queue * )malloc(sizeof(struct queue));
+    newpkt -> pkt = pkt;
+    newpkt->next = NULL;
+    newpkt->prev = NULL;
+    queue * head = r-> RecQ;
+    if(head == NULL){
+      r->RecQ = newpkt;
+    }else{
+      queue * current = head;
+      while(1){
+        if(current -> pkt -> seqno == seqno){
+          break;
+        }
+        if(current -> pkt -> seqno < seqno){
+          if(current -> next == NULL){
+            current -> next = newpkt;
+            break;
+          }
+            current = current -> next;
+        }else{
+          queue * temp = current -> prev;
+          if(temp != NULL){
+            temp -> next = newpkt;
+          } else{
+            r->RecQ = newpkt;
+          }
+          current -> next -> prev = newpkt;
+          newpkt -> next = current;
+          break;
+        }
+      }
+    }
+      rel_output(r);
+   }
 }
 
 
@@ -99,9 +235,110 @@ rel_read (rel_t *s)
   }
 }
 
+packet_t * create_data_packet(rel_t * s){
+  packet_t *packet;
+  packet = (packet_t*)malloc(sizeof(packet_t));
+  //fprintf(stderr, "Creating packets %p, %s\n", s, packet->data);
+  int bytes = conn_input(s->c, packet->data, PACKET_DATA_MAX_SIZE);
+ // fprintf(stderr, "conn input didnt segfault%p, %p, %d\n", s, packet->data, bytes);
+
+  if(bytes == 0){ //Nothing left to send so exit
+    free(packet);
+    return NULL;
+  }
+
+  if(bytes == -1){
+    packet->len = EOF_PACKET_SIZE;
+  }else{
+    packet->len = EOF_PACKET_SIZE + bytes;
+    if(packet->len <(PACKET_DATA_MAX_SIZE+EOF_PACKET_SIZE)){
+    s->prevPacketFull = 1;
+   // fprintf(stderr, "reaches end of input len %d \n", packet->len);
+    }
+  }
+  packet->ackno = (uint32_t) 1;
+  packet->seqno=s->LFS+1;
+  return packet;
+}
+
+void send_prepare(packet_t * packet){
+  int length = packet->len;
+  packet->ackno = htonl(packet->ackno);
+  packet->seqno = htonl(packet->seqno);
+  packet->len = htons(packet->len);
+  packet->cksum = cksum(packet, length);
+}
+
+void read_prepare(packet_t * packet){
+  packet->ackno = ntohl(packet->ackno);
+  packet->seqno = ntohl(packet->seqno);
+  packet->len = ntohs(packet->len);
+
+}
+
 void
 rel_output (rel_t *r)
 {
+    conn_t * connection = r->c;
+  queue * recvQ = r->RecQ;
+
+  int ackno = -1;
+  while(recvQ != NULL) {
+    packet_t * packet = recvQ->pkt;
+    int seqno = packet->seqno;
+    if(r->NFE == seqno) {
+
+      int remainingBufSpace = conn_bufspace(connection);
+      char* data = packet->data;
+      int dataSize = packet->len - 12;
+      if(dataSize <= remainingBufSpace) {
+
+        if(r->recvEOF != 1){
+         conn_output(connection, data, dataSize);
+        }
+       if(packet->len == EOF_PACKET_SIZE ){
+         r->recvEOF = 1; 
+      //  if(packet->seqno != 1){
+        r->sentEOF =2;
+        rel_read(r);
+      }
+        ackno = seqno + 1;
+        r->NFE = ackno;
+        queue * prev = r->RecQ;
+        r->RecQ = recvQ->next;
+        if(r->RecQ != NULL){
+          r->RecQ->prev = NULL;
+        }
+        free(prev);
+      }
+      else {
+        break;
+      }
+    }
+    else { 
+      break;
+    } 
+    recvQ = r->RecQ;
+  }
+
+
+  if(ackno != -1) {
+  //  fprintf(stderr, "sending ack %d  \n",ackno);
+    packet_t * acknowledgementPacket = (packet_t *) malloc(8);
+    acknowledgementPacket->cksum = 0;
+    uint16_t ackSize = 8;
+    acknowledgementPacket->len = htons(ackSize);
+    acknowledgementPacket->ackno = htonl(ackno);
+    uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
+    acknowledgementPacket->cksum = checkSum;
+    conn_sendpkt(connection, acknowledgementPacket, ackSize);
+    free(acknowledgementPacket);
+  }
+
+    if(check_close(r) == 1){
+    rel_destroy(r);
+    return;
+  }
 }
 
 void
