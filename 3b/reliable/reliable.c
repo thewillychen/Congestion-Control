@@ -341,6 +341,22 @@ rel_output (rel_t *r)
   }
 }
 
+int check_close(rel_t * s){ //Still need to check for time condition!
+  int i;
+  int check = 1;
+  for(i=0; i<s->SWS; i++){
+    if(s->sentPackets[i].valid == 1){
+      check =0;
+      break;
+    }
+  }
+  //int timeSinceEOF = difference of EOFsentTime and currentTime as an int
+  //fprintf(stderr, "%d %d %d %d %d %d\n",check, s->RecQ==NULL, s->sentEOF, s->recvEOF, s->EOFsentTime, getpid());
+  if(check && s->RecQ == NULL && s->sentEOF == 1 && s->recvEOF == 1 && s->EOFsentTime >=10)
+    return 1;
+  return 0;
+}
+
 void
 rel_timer ()
 {
