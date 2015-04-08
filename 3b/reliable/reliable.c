@@ -60,6 +60,7 @@ struct reliable_state {
   //queue * SendQend;
   int arraySize;
   sentPacket * sentPackets;
+  int incrtTimer;
   /* Add your own data fields below this */
 
 };
@@ -76,7 +77,7 @@ int check_close(rel_t * s);
 int timeval_subtract(timeval * result, timeval * x, timeval * y);
 int acktoSend;
 void create_send_ack_packet(rel_t * r);
-
+void incrementCongestion(rel_t * r);
 
 
 /* Creates a new reliable protocol session, returns NULL on failure.
@@ -118,7 +119,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r->sentPackets =(sentPacket*) malloc(sizeof(sentPacket)*2*r->SWS);
   r->EOFsentTime = 0;
   r->congestWindow = 1;
-
+  r->incrtTimer = 0;
   r -> timeout = cc -> timeout;
   r->prevPacketFull = 0;
 
@@ -487,6 +488,65 @@ int check_close(rel_t * s){ //Still need to check for time condition!
 void
 rel_timer ()
 {
-  /* Retransmit any packets that need to be retransmitted */
+    /* Retransmit any packets that need to be retransmitted */
+  rel_t * r = rel_list;
+  int i;
+  if(r->sentEOF== 1){
+    r->EOFsentTime = r->EOFsentTime +1;
+  }
+  for(i = 0; i < r->SWS; i++){
 
+    if(r->sentPackets[i].valid == 1) {
+      if(r->sentPackets[i].timeCount >= r->timeout/10) {
+        r->sentPackets[i].timeCount = 0;
+        int len = r->sentPackets[i].pkt->len;
+        r->sentPackets[i].pkt->ackno = htonl(r->sentPackets[i].pkt->ackno);
+        r->sentPackets[i].pkt->seqno = htonl(r->sentPackets[i].pkt->seqno);
+        r->sentPackets[i].pkt->len = htons(r->sentPackets[i].pkt->len);
+        r->sentPackets[i].pkt->cksum = 0;
+        r->sentPackets[i].pkt->cksum = cksum(r->sentPackets[i].pkt,len);
+        conn_sendpkt(r->c, r->sentPackets[i].pkt, (size_t)len);
+        read_prepare(r->sentPackets[i].pkt);
+      }
+      else{
+        r->sentPackets[i].timeCount = r->sentPackets[i].timeCount + 1;
+      }
+    }
+    if(check_close(r) == 1){
+      rel_destroy(r);
+      return;
+    }
+  }
+  
+  if(r->incrtTimer >= 4) {
+    int incrCongestion = 1;
+    int j;
+    for(j=0; j < r->arraySize; j++) {
+      packet_t * packet = r->sentPackets[j].pkt;
+      int seqno = ntohl(packet->seqno);
+      if(seqno <= r->LAR && r->sentPackets[j].valid >= 1) {
+        incrCongestion = 0;
+        break;
+      }
+    }
+    if(incrCongestion) {
+      incrementCongestion(r);
+    }else {
+      r->congestWindow = r->congestWindow/2;
+      r->aimd = 1;
+    }
+    r->incrtTimer = -1;
+  }
+  r->incrtTimer = r->incrtTimer + 1;
+  /* Retransmit any packets that need to be retransmitted */
+}
+
+void
+incrementCongestion(rel_t * r) {
+  if(r->aimd) {
+    r->congestWindow = r->congestWindow + 1;
+  }
+  else{
+    r->congestWindow = r->congestWindow * 2;
+  }
 }
