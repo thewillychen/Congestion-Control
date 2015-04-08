@@ -147,7 +147,7 @@ rel_destroy (rel_t *r)
 
   long beginTimeSec = r->startTime->tv_nsec;
   long endTimeSec = endTime->tv_nsec;
-  fprintf(stderr, "Elapsed time: %lu nanoseconds\n", endTimeSec-beginTimeSec);
+  fprintf(stderr, "Elapsed time: %d seconds %lu nanoseconds\n", (int) (endTime->tv_sec - r->startTime->tv_sec), endTimeSec-beginTimeSec);
   /* Free any other allocated memory here */
 }
 
@@ -178,6 +178,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
   pkt->cksum = sum;
 
   if(len == ACK_PACKET_SIZE){
+    //fprintf(stderr, "ack no %d\n", pkt->ackno);
     int ackno = pkt->ackno;
     int i;
     int found=0;
@@ -221,9 +222,11 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     }
     rel_read(r);
   }else if(len > ACK_PACKET_SIZE && len<=MAX_PACKET_SIZE){
+    fprintf(stderr, "seqno %d \n", pkt->seqno);
     uint32_t seqno = pkt -> seqno;
     if((seqno < r->NFE)){
       create_send_ack_packet(r);
+      return;
         // packet_t * acknowledgementPacket = (packet_t *) malloc(ACK_PACKET_SIZE);
         // acknowledgementPacket->cksum = 0;
         // uint16_t ackSize = ACK_PACKET_SIZE;
@@ -255,6 +258,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         if(current -> pkt -> seqno < seqno){
           if(current -> next == NULL){
             current -> next = newpkt;
+            newpkt->prev = current;
             break;
           }
             current = current -> next;
@@ -271,6 +275,15 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         }
       }
     }
+    head = r-> RecQ;
+    queue* current = head;
+    int size =0;
+    while(current!= NULL){
+      fprintf(stderr, "asdfsjf");
+      current =current->next;
+      size += 1;
+    }
+    fprintf(stderr, "recq %d\n", size );
       rel_output(r);
    }
    //fprintf(stderr, "rel_recv returns");
@@ -413,9 +426,9 @@ rel_output (rel_t *r)
 {
   conn_t * connection = r->c;
   queue * recvQ = r->RecQ;
-
   int ackno = -1;
   while(recvQ != NULL) {
+    fprintf(stderr, "stuck seqno %d NFE %d\n", recvQ->pkt->seqno, r->NFE);
     packet_t * packet = recvQ->pkt;
     int seqno = packet->seqno;
     if(r->recvEOF) {
@@ -451,7 +464,7 @@ rel_output (rel_t *r)
         }
         ackno = seqno + 1;
         r->NFE = ackno;
-        int advertisedWindow = (int)remainingBufSpace/MAX_PACKET_SIZE;
+        int advertisedWindow = r->rcvWindow;
         //fprintf(stderr, "advertised window %d \n", advertisedWindow);
         r->rcvWindow=advertisedWindow;  
         queue * prev = r->RecQ;
@@ -459,6 +472,7 @@ rel_output (rel_t *r)
         if(r->RecQ != NULL){
           r->RecQ->prev = NULL;
         }
+        recvQ = r->RecQ;
         free(prev);
       }
       else {
@@ -467,11 +481,12 @@ rel_output (rel_t *r)
     }
     else if(r->NFE < seqno){
       create_send_ack_packet(r);
+      recvQ = recvQ->next;
     }
     else { 
       break;
     } 
-    recvQ = r->RecQ;
+    //fprintf(stderr, "reached");
   }
 
 
@@ -540,7 +555,8 @@ rel_timer ()
   for(i = 0; i < r->SWS; i++){
 
     if(r->sentPackets[i].valid == 1) {
-      if(r->sentPackets[i].timeCount >= r->timeout/10) {
+      if(r->sentPackets[i].timeCount >= 4) {
+        fprintf(stderr, "retransmit seq no: %d LAR: %d \n", r->sentPackets[i].pkt->seqno, r->LAR);
         r->sentPackets[i].timeCount = 0;
         int len = r->sentPackets[i].pkt->len;
         r->sentPackets[i].pkt->ackno = htonl(r->sentPackets[i].pkt->ackno);
@@ -574,6 +590,7 @@ rel_timer ()
     if(incrCongestion) {
       incrementCongestion(r);
     }else {
+      //fprintf(stderr, "from within timer: %G\n", r->congestWindow);
       r->congestWindow = max(1,r->congestWindow/2);
       r->aimd = 1;
     }
@@ -595,10 +612,11 @@ max(int i, double j)
 void
 incrementCongestion(rel_t * r) {
   if(r->aimd) {
+    //fprintf(stderr, "AIMD contesgion %G \n", r->congestWindow);
     r->congestWindow = r->congestWindow + 1;
   }
   else{
-    fprintf(stderr, "double contesgion");
+    //fprintf(stderr, "double congestion %G\n", r->congestWindow);
     r->congestWindow = r->congestWindow * 2;
   }
 }
