@@ -231,7 +231,35 @@ rel_read (rel_t *s)
   }
   else //run in the sender mode
   {
-    //same logic as lab 1
+    if(s->LFS - s->LAR < s->SWS && s->sentEOF!=1){ //&& s->prevPacketFull != 1){
+    packet_t * newPacket = create_data_packet(s);
+    if(newPacket == NULL){
+
+      return;
+    }else if(newPacket->len == EOF_PACKET_SIZE){//check for -1 aka EOF
+  
+      s->sentEOF =1;
+    }
+    int length = newPacket->len;
+    send_prepare(newPacket);
+    conn_sendpkt(s->c, newPacket, (size_t)length);
+    read_prepare(newPacket);
+    int i;
+    for(i =0; i < s->SWS; i++){
+      if(s->sentPackets[i].valid < 1){
+        s->sentPackets[i].valid = 1;
+        s->sentPackets[i].timeCount = 0;
+        s->sentPackets[i].pkt = newPacket;
+        break;
+      }
+
+    }
+          if(check_close(s) == 1){
+        rel_destroy(s);
+        return;
+      }       
+    s->LFS++;
+  }
   }
 }
 
