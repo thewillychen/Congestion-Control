@@ -168,6 +168,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
       }
      
     }
+    r->rcvWindow = pkt->rwnd;
     r->LAR = ackno -1;
     rel_read(r);
   }else if(len > ACK_PACKET_SIZE && len<=MAX_PACKET_SIZE){
