@@ -61,6 +61,7 @@ struct reliable_state {
   int arraySize;
   sentPacket * sentPackets;
   int incrtTimer;
+  struct timespec * startTime;
   /* Add your own data fields below this */
 
 };
@@ -123,6 +124,8 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r -> timeout = cc -> timeout;
   r->prevPacketFull = 0;
 
+  r->startTime = malloc(sizeof(struct timespec));
+  clock_gettime(CLOCK_MONOTONIC, r->startTime);
   /* Do any other initialization you need here */
 
   //fprintf(stderr, "createexit\n");
@@ -138,6 +141,12 @@ rel_destroy (rel_t *r)
    *r->prev = r->next;
   conn_destroy (r->c);
   free(r);
+  struct timespec * endTime = malloc(sizeof(struct timespec));
+  clock_gettime(CLOCK_MONOTONIC, endTime);
+
+  int beginTimeSec = r->startTime->tv_sec;
+  int endTimeSec = endTime->tv_sec;
+  fprintf(stderr, "Elapsed time: %d\n", endTimeSec-beginTimeSec);
   /* Free any other allocated memory here */
 }
 
