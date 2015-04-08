@@ -55,7 +55,7 @@ struct reliable_state {
   int EOFsentTime; 
   int prevPacketFull;
   int rcvWindow;
-  int congestWindow;
+  double congestWindow;
   int aimd;
   //queue * SendQend;
   int arraySize;
@@ -117,6 +117,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r->recvEOF = 0;
   r->sentPackets =(sentPacket*) malloc(sizeof(sentPacket)*2*r->SWS);
   r->EOFsentTime = 0;
+  r->congestWindow = 1;
 
   r -> timeout = cc -> timeout;
   r->prevPacketFull = 0;
@@ -190,7 +191,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
               r->sentPackets[i].pkt->ackno = htonl(r->sentPackets[i].pkt->ackno);
               r->sentPackets[i].pkt->seqno = htonl(r->sentPackets[i].pkt->seqno);
               r->sentPackets[i].pkt->len = htons(r->sentPackets[i].pkt->len);
-              r->sentPackets[i].pkt->rcvWindow = htonl(r->sentPackets[i].pkt->rcvWindow);
+              r->sentPackets[i].pkt->rwnd = htonl(r->sentPackets[i].pkt->rwnd);
               r->sentPackets[i].pkt->cksum = 0;
               r->sentPackets[i].pkt->cksum = cksum(r->sentPackets[i].pkt,len);
               conn_sendpkt(r->c, r->sentPackets[i].pkt, (size_t)len);
