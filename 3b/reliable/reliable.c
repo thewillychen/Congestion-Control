@@ -9,7 +9,7 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/time.h>
-#include <sys/socket.h>
+#include <sys/socket.h> 
 #include <sys/uio.h>
 #include <netinet/in.h>
 
@@ -295,7 +295,7 @@ void send_prepare(packet_t * packet){
   packet->ackno = htonl(packet->ackno);
   packet->seqno = htonl(packet->seqno);
   packet->len = htons(packet->len);
-  packet->rwnd = htons(packet->rwnd);
+  packet->rwnd = htonl(packet->rwnd);
   packet->cksum = cksum(packet, length);
 }
 
@@ -303,7 +303,7 @@ void read_prepare(packet_t * packet){
   packet->ackno = ntohl(packet->ackno);
   packet->seqno = ntohl(packet->seqno);
   packet->len = ntohs(packet->len);
-  packet->rwnd = ntohs(packet->rwnd);
+  packet->rwnd = ntohl(packet->rwnd);
 
 }
 
