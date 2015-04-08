@@ -323,6 +323,7 @@ int min(int a, int b){
 }
 void sentPacketSize(rel_t * r){
   int size = min(r->rcvWindow, r->congestWindow);
+  r->SWS = size;
   if(r->arraySize<size){
     
     sentPacket * newArray = malloc(sizeof(sentPacket)*size*2);
@@ -332,7 +333,7 @@ void sentPacketSize(rel_t * r){
       newArray[i] = temp[i];
     }
     r->sentPackets = newArray;
-    r->arraySize = size;
+    r->arraySize = size*2;
     free(temp);
   }
 }
