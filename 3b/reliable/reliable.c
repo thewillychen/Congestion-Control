@@ -54,6 +54,7 @@ struct reliable_state {
   int EOFsentTime; 
   int prevPacketFull;
   int rcvWindow;
+  int congestWindow;
   //queue * SendQend;
   int arraySize;
   sentPacket * sentPackets;
