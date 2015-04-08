@@ -9,7 +9,7 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/time.h>
-#include <sys/socket.h>
+#include <sys/socket.h> 
 #include <sys/uio.h>
 #include <netinet/in.h>
 
@@ -175,6 +175,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         uint16_t ackSize = ACK_PACKET_SIZE;
         acknowledgementPacket->len = htons(ackSize);
         acknowledgementPacket->ackno = htonl(r->NFE);
+        acknowledgementPacket->rwnd = htonl(r->SWS);
         uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
         acknowledgementPacket->cksum = checkSum;
         conn_sendpkt(r->c, acknowledgementPacket, ackSize);
@@ -304,6 +305,7 @@ void send_prepare(packet_t * packet){
   packet->ackno = htonl(packet->ackno);
   packet->seqno = htonl(packet->seqno);
   packet->len = htons(packet->len);
+  packet->rwnd = htonl(packet->rwnd);
   packet->cksum = cksum(packet, length);
 }
 
@@ -311,6 +313,7 @@ void read_prepare(packet_t * packet){
   packet->ackno = ntohl(packet->ackno);
   packet->seqno = ntohl(packet->seqno);
   packet->len = ntohs(packet->len);
+  packet->rwnd = ntohl(packet->rwnd);
 
 }
 
@@ -367,6 +370,7 @@ rel_output (rel_t *r)
     uint16_t ackSize = ACK_PACKET_SIZE;
     acknowledgementPacket->len = htons(ackSize);
     acknowledgementPacket->ackno = htonl(ackno);
+    acknowledgementPacket->rwnd = htonl(r->SWS);
     uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
     acknowledgementPacket->cksum = checkSum;
     conn_sendpkt(connection, acknowledgementPacket, ackSize);
