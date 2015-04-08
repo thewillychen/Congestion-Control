@@ -178,7 +178,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
   pkt->cksum = sum;
 
   if(len == ACK_PACKET_SIZE){
-    //fprintf(stderr, "ack no %d\n", pkt->ackno);
+    fprintf(stderr, "ack no %d\n", pkt->ackno);
     int ackno = pkt->ackno;
     int i;
     int found=0;
@@ -222,7 +222,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     }
     rel_read(r);
   }else if(len > ACK_PACKET_SIZE && len<=MAX_PACKET_SIZE){
-    fprintf(stderr, "seqno %d \n", pkt->seqno);
+    fprintf(stderr, "seqno: %d, NFE:%d \n", pkt->seqno, r->NFE);
     uint32_t seqno = pkt -> seqno;
     if((seqno < r->NFE)){
       create_send_ack_packet(r);
@@ -437,13 +437,14 @@ rel_output (rel_t *r)
       r->RecQ= NULL;
     }
     if(r->NFE == seqno) {
-
+      fprintf(stderr, "NFE = seqno: %d = %d \n", recvQ->pkt->seqno, r->NFE);
       int remainingBufSpace = conn_bufspace(connection); 
       char* data = packet->data;
       int dataSize = packet->len - EOF_PACKET_SIZE;
       
       if(dataSize <= remainingBufSpace) {
 
+        fprintf(stderr, "NFE = seqno and dataSize < remainingBufSpace: %d = %d \n", recvQ->pkt->seqno, r->NFE);
         if(r->recvEOF != 1){
          conn_output(connection, data, dataSize);
         }
@@ -464,6 +465,8 @@ rel_output (rel_t *r)
         }
         ackno = seqno + 1;
         r->NFE = ackno;
+
+        fprintf(stderr, "new NFE: %d \n", r->NFE);
         int advertisedWindow = r->rcvWindow;
         //fprintf(stderr, "advertised window %d \n", advertisedWindow);
         r->rcvWindow=advertisedWindow;  
