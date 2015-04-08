@@ -592,7 +592,7 @@ rel_timer ()
     }
     if(incrCongestion) {
       if(r->congestWindow >= r->ssthres){
-        aimd=1;
+        r->aimd=1;
       }
       incrementCongestion(r);
     }else {
