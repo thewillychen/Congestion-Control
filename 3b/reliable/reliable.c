@@ -181,28 +181,32 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
   pkt->cksum = sum;
 
   if(len == ACK_PACKET_SIZE){
-    //fprintf(stderr, "ack no %d\n", pkt->ackno);
+    fprintf(stderr, "ack no %d\n", pkt->ackno);
     int ackno = pkt->ackno;
     int i;
     int found=0;
     for(i = 0; i<r->arraySize; i++){
       if(r->sentPackets[i].valid == 1){
+        fprintf(stderr, "In valid sentPacket with ackno %d for ackno: %d\n", r->sentPackets[i].pkt->seqno, pkt->ackno);
         //fprintf(stderr, "within loop of rel_recv queue packet seqno %d ackno %d \n", r->sentPackets[i].pkt->seqno, ackno);
         if(r->sentPackets[i].pkt->seqno < ackno){
           r->sentPackets[i].valid = -1;
           found = 1;
+          //break;
         } 
       }
              
     }
     //fprintf(stderr, "found %d\n", found);
     if(found ==1 ){
+      fprintf(stderr, "Found for ack no %d\n", pkt->ackno);
         r->rcvWindow = pkt->rwnd;
         sentPacketSize(r);
         r->LAR = ackno -1;      
         r->dupack = 0;
+        fprintf(stderr, "Setting LAR to %d\n", r->LAR);
     }else{
-        r->dupack = r->dupack+1;
+        r->dupack = r->dupack+1;  
         if(r->dupack ==3){
           for(i=0; i<r->arraySize; i++){
             if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno == ackno){
@@ -225,7 +229,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     }
     rel_read(r);
   }else if(len > ACK_PACKET_SIZE && len<=MAX_PACKET_SIZE){
-    fprintf(stderr, "seqno %d \n", pkt->seqno);
+    fprintf(stderr, "seqno: %d, NFE:%d \n", pkt->seqno, r->NFE);
     uint32_t seqno = pkt -> seqno;
     if((seqno < r->NFE)){
       create_send_ack_packet(r);
@@ -314,6 +318,7 @@ rel_read (rel_t *s)
   }
   else //run in the sender mode
   {
+    fprintf(stderr, "Trying to send packet for LFS %d, LAR %d, SWS %d\n", s->LFS, s->LAR, s->SWS);
     //fprintf(stderr, "tryingsending packet LFS %d, LAR %d, SWS %d, sentEOF %d\n", s->LFS, s->LAR, s->SWS, s->sentEOF);
     if(s->LFS - s->LAR < s->SWS && s->sentEOF!=1){ //&& s->prevPacketFull != 1){
       packet_t * newPacket = create_data_packet(s);
@@ -440,13 +445,14 @@ rel_output (rel_t *r)
       r->RecQ= NULL;
     }
     if(r->NFE == seqno) {
-
+      fprintf(stderr, "NFE = seqno: %d = %d \n", recvQ->pkt->seqno, r->NFE);
       int remainingBufSpace = conn_bufspace(connection); 
       char* data = packet->data;
       int dataSize = packet->len - EOF_PACKET_SIZE;
       
       if(dataSize <= remainingBufSpace) {
 
+        fprintf(stderr, "NFE = seqno and dataSize < remainingBufSpace: %d = %d \n", recvQ->pkt->seqno, r->NFE);
         if(r->recvEOF != 1){
          conn_output(connection, data, dataSize);
         }
@@ -467,6 +473,8 @@ rel_output (rel_t *r)
         }
         ackno = seqno + 1;
         r->NFE = ackno;
+
+        fprintf(stderr, "new NFE: %d \n", r->NFE);
         int advertisedWindow = r->rcvWindow;
         //fprintf(stderr, "advertised window %d \n", advertisedWindow);
         r->rcvWindow=advertisedWindow;  
@@ -555,7 +563,7 @@ rel_timer ()
   if(r->sentEOF== 1){
     r->EOFsentTime = r->EOFsentTime +1;
   }
-  for(i = 0; i < r->SWS; i++){
+  for(i = 0; i < r->arraySize; i++){
 
     if(r->sentPackets[i].valid == 1) {
       if(r->sentPackets[i].timeCount >= 4) {
