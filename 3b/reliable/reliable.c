@@ -171,6 +171,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
      
     }
     r->rcvWindow = pkt->rwnd;
+    sentPacketSize(r);
     r->LAR = ackno -1;
     rel_read(r);
   }else if(len > ACK_PACKET_SIZE && len<=MAX_PACKET_SIZE){
@@ -285,7 +286,7 @@ rel_read (rel_t *s)
 }
 
 void sentPacketSize(rel_t * r){
-  int size = r->SWS;
+  int size = min(r->rcvWindow, r->congestWindow);
   if(r->arraySize<size){
     sentPacket * newArray = malloc(sizeof(sentPacket)*size*2);
     sentPacket * temp = r->sentPackets;
