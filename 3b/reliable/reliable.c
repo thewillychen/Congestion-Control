@@ -69,6 +69,7 @@ void send_prepare(packet_t * packet);
 void read_prepare(packet_t * packet);
 void sentPacketSize(rel_t * r);
 packet_t * create_data_packet(rel_t * s);
+int min(int a, int b);
 int check_close(rel_t * s);
 int timeval_subtract(timeval * result, timeval * x, timeval * y);
 int acktoSend;
@@ -105,13 +106,13 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   }
   rel_list = r;
   r-> SWS = cc-> window;
-  r->arraySize = r->SWS;
+  r->arraySize = r->SWS*2;
   r-> LAR= 0;
   r-> LFS = 0;
   r-> NFE = 1;
   r->sentEOF = 0;
   r->recvEOF = 0;
-  r->sentPackets =(sentPacket*) malloc(sizeof(sentPacket)*r->SWS);
+  r->sentPackets =(sentPacket*) malloc(sizeof(sentPacket)*2*r->SWS);
   r->EOFsentTime = 0;
 
   r -> timeout = cc -> timeout;
@@ -284,10 +285,16 @@ rel_read (rel_t *s)
     }
   }
 }
+int min(int a, int b){
+  if(a <= b) 
+    return a;
 
+ return b;
+}
 void sentPacketSize(rel_t * r){
   int size = min(r->rcvWindow, r->congestWindow);
   if(r->arraySize<size){
+    
     sentPacket * newArray = malloc(sizeof(sentPacket)*size*2);
     sentPacket * temp = r->sentPackets;
     int i;
@@ -295,6 +302,7 @@ void sentPacketSize(rel_t * r){
       newArray[i] = temp[i];
     }
     r->sentPackets = newArray;
+    r->arraySize = size;
     free(temp);
   }
 }
