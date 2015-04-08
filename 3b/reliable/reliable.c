@@ -40,10 +40,11 @@ typedef struct timeval timeval;
 struct reliable_state {
   rel_t *next;      /* Linked list for traversing all connections */
   rel_t **prev;
-  uint32_t SWS;
-  uint32_t LAR;
-  uint32_t LFS;   // increment this 
-  uint32_t NFE;
+  uint32_t SWS;   //Sliding Window Size - sender
+  uint32_t LAR;   //Last Ack Received - sender
+  uint32_t LFS;   //Last Frame Sent - sender
+  uint32_t NFE;   //Next Frame Expected - receiver
+  uint32_t LFR;   //Last Frame Read - receiver
   conn_t *c;      /* This is the connection object */
   queue * SendQ;
   queue * RecQ;
@@ -329,9 +330,10 @@ rel_output (rel_t *r)
     int seqno = packet->seqno;
     if(r->NFE == seqno) {
 
-      int remainingBufSpace = conn_bufspace(connection);
+      int remainingBufSpace = conn_bufspace(connection); 
       char* data = packet->data;
       int dataSize = packet->len - 12;
+      
       if(dataSize <= remainingBufSpace) {
 
         if(r->recvEOF != 1){
@@ -345,6 +347,8 @@ rel_output (rel_t *r)
       }
         ackno = seqno + 1;
         r->NFE = ackno;
+        int advertisedWindow = (int)remainingBufSpace/MAX_PACKET_SIZE - ((r->NFE-1)-r->LFR);
+        r->rcvWindow=advertisedWindow;
         queue * prev = r->RecQ;
         r->RecQ = recvQ->next;
         if(r->RecQ != NULL){
@@ -370,7 +374,7 @@ rel_output (rel_t *r)
     uint16_t ackSize = ACK_PACKET_SIZE;
     acknowledgementPacket->len = htons(ackSize);
     acknowledgementPacket->ackno = htonl(ackno);
-    acknowledgementPacket->rwnd = htonl(r->SWS);
+    acknowledgementPacket->rwnd = htonl(r->rcvWindow);
     uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
     acknowledgementPacket->cksum = checkSum;
     conn_sendpkt(connection, acknowledgementPacket, ackSize);
