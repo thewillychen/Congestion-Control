@@ -145,9 +145,9 @@ rel_destroy (rel_t *r)
   struct timespec * endTime = malloc(sizeof(struct timespec));
   clock_gettime(CLOCK_MONOTONIC, endTime);
 
-  int beginTimeSec = r->startTime->tv_sec;
-  int endTimeSec = endTime->tv_sec;
-  fprintf(stderr, "Elapsed time: %d\n", endTimeSec-beginTimeSec);
+  long beginTimeSec = r->startTime->tv_nsec;
+  long endTimeSec = endTime->tv_nsec;
+  fprintf(stderr, "Elapsed time: %lu nanoseconds\n", endTimeSec-beginTimeSec);
   /* Free any other allocated memory here */
 }
 
@@ -174,7 +174,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
   }
 
   read_prepare(pkt);
-   fprintf(stderr, "rel_recv length %d seqno %d ackno %d NFE %d LAR %d SWS %d rcvwndw %d congestWindow %G\n", pkt->len, pkt->seqno, pkt->ackno, r->NFE, r->LAR, r->SWS, r->rcvWindow, r->congestWindow);
+   //fprintf(stderr, "rel_recv length %d seqno %d ackno %d NFE %d LAR %d SWS %d rcvwndw %d congestWindow %G\n", pkt->len, pkt->seqno, pkt->ackno, r->NFE, r->LAR, r->SWS, r->rcvWindow, r->congestWindow);
   pkt->cksum = sum;
 
   if(len == ACK_PACKET_SIZE){
@@ -183,7 +183,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     int found=0;
     for(i = 0; i<r->arraySize; i++){
       if(r->sentPackets[i].valid == 1){
-        fprintf(stderr, "within loop of rel_recv queue packet seqno %d ackno %d \n", r->sentPackets[i].pkt->seqno, ackno);
+        //fprintf(stderr, "within loop of rel_recv queue packet seqno %d ackno %d \n", r->sentPackets[i].pkt->seqno, ackno);
         if(r->sentPackets[i].pkt->seqno < ackno){
           r->sentPackets[i].valid = -1;
           found = 1;
@@ -191,7 +191,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
       }
              
     }
-    fprintf(stderr, "found %d\n", found);
+    //fprintf(stderr, "found %d\n", found);
     if(found ==1 ){
         r->rcvWindow = pkt->rwnd;
         sentPacketSize(r);
@@ -235,7 +235,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         // conn_sendpkt(r->c, acknowledgementPacket, ackSize);
         // free(acknowledgementPacket);
     } 
-    if(seqno >= (r->NFE + r->SWS)){
+    if(seqno >= (r->NFE + r->SWS) && pkt->seqno != 1){
       //fprintf(stderr,"dropping seqno %d NFE%d\n", seqno, r->NFE);
       return;
     }
@@ -273,7 +273,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     }
       rel_output(r);
    }
-   fprintf(stderr, "rel_recv returns");
+   //fprintf(stderr, "rel_recv returns");
 }
 
 void
@@ -284,6 +284,7 @@ rel_read (rel_t *s)
     if(!(s->sentEOF)) {
       packet_t * packet = createEOF(s);
       conn_sendpkt(s->c, packet, EOF_PACKET_SIZE);
+      read_prepare(packet);
       s->sentPackets[0].pkt = packet;
       s->sentPackets[0].valid = 1;
       s->sentPackets[0].timeCount = 0;
@@ -297,7 +298,7 @@ rel_read (rel_t *s)
   }
   else //run in the sender mode
   {
-    fprintf(stderr, "tryingsending packet LFS %d, LAR %d, SWS %d, sentEOF %d\n", s->LFS, s->LAR, s->SWS, s->sentEOF);
+    //fprintf(stderr, "tryingsending packet LFS %d, LAR %d, SWS %d, sentEOF %d\n", s->LFS, s->LAR, s->SWS, s->sentEOF);
     if(s->LFS - s->LAR < s->SWS && s->sentEOF!=1){ //&& s->prevPacketFull != 1){
       packet_t * newPacket = create_data_packet(s);
       if(newPacket == NULL){
@@ -310,10 +311,10 @@ rel_read (rel_t *s)
       conn_sendpkt(s->c, newPacket, (size_t)length);
       read_prepare(newPacket);
       int i;
-      fprintf(stderr, "sent packets successfully\n");
+      //fprintf(stderr, "sent packets successfully\n");
       for(i =0; i < s->arraySize; i++){
         if(s->sentPackets[i].valid < 1){
-          fprintf(stderr, "sent packet: seqno:%d \n", newPacket->seqno);
+          //fprintf(stderr, "sent packet: seqno:%d \n", newPacket->seqno);
           s->sentPackets[i].valid = 1;
           s->sentPackets[i].timeCount = 0;
           s->sentPackets[i].pkt = newPacket;
@@ -417,11 +418,16 @@ rel_output (rel_t *r)
   while(recvQ != NULL) {
     packet_t * packet = recvQ->pkt;
     int seqno = packet->seqno;
+    if(r->recvEOF) {
+      //conn_output(r->c, packet->data, 0);
+      free(r->RecQ);
+      r->RecQ= NULL;
+    }
     if(r->NFE == seqno) {
 
       int remainingBufSpace = conn_bufspace(connection); 
       char* data = packet->data;
-      int dataSize = packet->len - 12;
+      int dataSize = packet->len - EOF_PACKET_SIZE;
       
       if(dataSize <= remainingBufSpace) {
 
@@ -432,15 +438,21 @@ rel_output (rel_t *r)
          r->recvEOF = 1; 
       //  if(packet->seqno != 1){
         //r->sentEOF =2;
-        //rel_read(r);
-        packet_t * EOFPacket = createEOF(r);
-        conn_sendpkt(r->c, EOFPacket, EOF_PACKET_SIZE);
-        free(EOFPacket);
-      }
+          if(r->sentEOF !=1 ){
+            rel_read(r);
+          }
+          else{
+            free(r->RecQ);
+            r->RecQ= NULL;
+          }
+        // packet_t * EOFPacket = createEOF(r);
+        // conn_sendpkt(r->c, EOFPacket, EOF_PACKET_SIZE);
+        // free(EOFPacket);
+        }
         ackno = seqno + 1;
         r->NFE = ackno;
         int advertisedWindow = (int)remainingBufSpace/MAX_PACKET_SIZE;
-        fprintf(stderr, "advertised window %d \n", advertisedWindow);
+        //fprintf(stderr, "advertised window %d \n", advertisedWindow);
         r->rcvWindow=advertisedWindow;  
         queue * prev = r->RecQ;
         r->RecQ = recvQ->next;
@@ -508,9 +520,9 @@ int check_close(rel_t * s){ //Still need to check for time condition!
     }
   }
   //int timeSinceEOF = difference of EOFsentTime and currentTime as an int
-  fprintf(stderr, "%d %d %d %d %d %d\n",check, s->RecQ==NULL, s->sentEOF, s->recvEOF, s->EOFsentTime, getpid());
+  //fprintf(stderr, "%d %d %d %d %d %d\n",check, s->RecQ==NULL, s->sentEOF, s->recvEOF, s->EOFsentTime, getpid());
   if(check && s->RecQ == NULL && s->sentEOF == 1 && s->recvEOF == 1 && s->EOFsentTime >=10){
-    fprintf(stderr, "I closed!!!");
+    //fprintf(stderr, "I closed!!!");
     return 1;
   }
   return 0;
@@ -549,7 +561,7 @@ rel_timer ()
     }
   }
   
-  if(r->incrtTimer >= 4) {
+  if(r->incrtTimer >= 4 && r->c->sender_receiver == 1) {
     int incrCongestion = 1;
     int j;
     for(j=0; j < r->arraySize; j++) {
@@ -586,6 +598,7 @@ incrementCongestion(rel_t * r) {
     r->congestWindow = r->congestWindow + 1;
   }
   else{
+    fprintf(stderr, "double contesgion");
     r->congestWindow = r->congestWindow * 2;
   }
 }
