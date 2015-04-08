@@ -75,6 +75,7 @@ int min(int a, int b);
 int check_close(rel_t * s);
 int timeval_subtract(timeval * result, timeval * x, timeval * y);
 int acktoSend;
+void create_send_ack_packet(rel_t * r);
 
 
 
@@ -206,16 +207,17 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
   }else if(len > ACK_PACKET_SIZE && len<=MAX_PACKET_SIZE){
     uint32_t seqno = pkt -> seqno;
     if((seqno < r->NFE)){
-        packet_t * acknowledgementPacket = (packet_t *) malloc(ACK_PACKET_SIZE);
-        acknowledgementPacket->cksum = 0;
-        uint16_t ackSize = ACK_PACKET_SIZE;
-        acknowledgementPacket->len = htons(ackSize);
-        acknowledgementPacket->ackno = htonl(r->NFE);
-        acknowledgementPacket->rwnd = htonl(r->rcvWindow);
-        uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
-        acknowledgementPacket->cksum = checkSum;
-        conn_sendpkt(r->c, acknowledgementPacket, ackSize);
-        free(acknowledgementPacket);
+      create_send_ack_packet(r);
+        // packet_t * acknowledgementPacket = (packet_t *) malloc(ACK_PACKET_SIZE);
+        // acknowledgementPacket->cksum = 0;
+        // uint16_t ackSize = ACK_PACKET_SIZE;
+        // acknowledgementPacket->len = htons(ackSize);
+        // acknowledgementPacket->ackno = htonl(r->NFE);
+        // acknowledgementPacket->rwnd = htonl(r->rcvWindow);
+        // uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
+        // acknowledgementPacket->cksum = checkSum;
+        // conn_sendpkt(r->c, acknowledgementPacket, ackSize);
+        // free(acknowledgementPacket);
     } 
     if(seqno >= (r->NFE + r->SWS)){
       //fprintf(stderr,"dropping seqno %d NFE%d\n", seqno, r->NFE);
@@ -420,6 +422,9 @@ rel_output (rel_t *r)
         break;
       }
     }
+    else if(r->NFE < seqno){
+      create_send_ack_packet(r);
+    }
     else { 
       break;
     } 
@@ -429,16 +434,17 @@ rel_output (rel_t *r)
 
   if(ackno != -1) {
   //  fprintf(stderr, "sending ack %d  \n",ackno);
-    packet_t * acknowledgementPacket = (packet_t *) malloc(ACK_PACKET_SIZE);
-    acknowledgementPacket->cksum = 0;
-    uint16_t ackSize = ACK_PACKET_SIZE;
-    acknowledgementPacket->len = htons(ackSize);
-    acknowledgementPacket->ackno = htonl(ackno);
-    acknowledgementPacket->rwnd = htonl(r->rcvWindow);
-    uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
-    acknowledgementPacket->cksum = checkSum;
-    conn_sendpkt(connection, acknowledgementPacket, ackSize);
-    free(acknowledgementPacket);
+    // packet_t * acknowledgementPacket = (packet_t *) malloc(ACK_PACKET_SIZE);
+    // acknowledgementPacket->cksum = 0;
+    // uint16_t ackSize = ACK_PACKET_SIZE;
+    // acknowledgementPacket->len = htons(ackSize);
+    // acknowledgementPacket->ackno = htonl(ackno);
+    // acknowledgementPacket->rwnd = htonl(r->rcvWindow);
+    // uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
+    // acknowledgementPacket->cksum = checkSum;
+    // conn_sendpkt(connection, acknowledgementPacket, ackSize);
+    // free(acknowledgementPacket);
+    create_send_ack_packet(r);
   }
 
     if(check_close(r) == 1){
@@ -446,6 +452,20 @@ rel_output (rel_t *r)
     return;
   }
 }
+
+void create_send_ack_packet(rel_t * r){
+    packet_t * acknowledgementPacket = (packet_t *) malloc(ACK_PACKET_SIZE);
+    acknowledgementPacket->cksum = 0;
+    uint16_t ackSize = ACK_PACKET_SIZE;
+    acknowledgementPacket->len = htons(ackSize);
+    acknowledgementPacket->ackno = htonl(r->NFE);
+    acknowledgementPacket->rwnd = htonl(r->rcvWindow);
+    uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
+    acknowledgementPacket->cksum = checkSum;
+    conn_sendpkt(r->c, acknowledgementPacket, ackSize);
+    free(acknowledgementPacket);
+}
+
 
 int check_close(rel_t * s){ //Still need to check for time condition!
   int i;
