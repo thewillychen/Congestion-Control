@@ -55,6 +55,7 @@ struct reliable_state {
   int prevPacketFull;
   int rcvWindow;
   //queue * SendQend;
+  int arraySize;
   sentPacket * sentPackets;
   /* Add your own data fields below this */
 
@@ -65,6 +66,7 @@ rel_t *rel_list;
 //Helper function declarations
 void send_prepare(packet_t * packet);
 void read_prepare(packet_t * packet);
+void sentPacketSize(rel_t * r);
 packet_t * create_data_packet(rel_t * s);
 int check_close(rel_t * s);
 int timeval_subtract(timeval * result, timeval * x, timeval * y);
@@ -102,6 +104,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   }
   rel_list = r;
   r-> SWS = cc-> window;
+  r->arraySize = r->SWS;
   r-> LAR= 0;
   r-> LFS = 0;
   r-> NFE = 1;
@@ -166,6 +169,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
       }
      
     }
+    r->rcvWindow = pkt->rwnd;
     r->LAR = ackno -1;
     rel_read(r);
   }else if(len > ACK_PACKET_SIZE && len<=MAX_PACKET_SIZE){
@@ -272,6 +276,20 @@ rel_read (rel_t *s)
       }       
       s->LFS++;
     }
+  }
+}
+
+void sentPacketSize(rel_t * r){
+  int size = r->SWS;
+  if(r->arraySize<size){
+    sentPacket * newArray = malloc(sizeof(sentPacket)*size*2);
+    sentPacket * temp = r->sentPackets;
+    int i;
+    for(i=0; i<r->arraySize; i++){
+      newArray[i] = temp[i];
+    }
+    r->sentPackets = newArray;
+    free(temp);
   }
 }
 
