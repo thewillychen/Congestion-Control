@@ -236,7 +236,11 @@ rel_read (rel_t *s)
       packet->seqno = 1;
       send_prepare(packet);
       conn_sendpkt(s->c, packet, EOF_PACKET_SIZE);
+      s->sentPackets[0].pkt = packet;
+      s->sentPackets[0].valid = 1;
+      s->sentPackets[0].timeCount = 0;
     }
+
     //if already sent EOF to the sender
     //  return;
     //else
