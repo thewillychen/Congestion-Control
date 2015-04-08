@@ -12,6 +12,7 @@
 #include <sys/socket.h> 
 #include <sys/uio.h>
 #include <netinet/in.h>
+#include <limits.h>
 
 #include "rlib.h"
 
@@ -57,6 +58,7 @@ struct reliable_state {
   int rcvWindow;
   double congestWindow;
   int aimd;
+  int ssthres; 
   //queue * SendQend;
   int arraySize;
   sentPacket * sentPackets;
@@ -120,11 +122,12 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r->recvEOF = 0;
   r->sentPackets =(sentPacket*) malloc(sizeof(sentPacket)*2*r->SWS);
   r->EOFsentTime = 0;
-  r->congestWindow = 1;
+  r->congestWindow = 4;
   r->incrtTimer = 0;
   r -> timeout = cc -> timeout;
   r->prevPacketFull = 0;
-  r->rcvWindow = r->SWS;
+  r->ssthres = INT_MAX;
+  r->rcvWindow = r->SWS; 
   r->startTime = malloc(sizeof(struct timespec));
   clock_gettime(CLOCK_MONOTONIC, r->startTime);
   /* Do any other initialization you need here */
@@ -588,11 +591,16 @@ rel_timer ()
       }
     }
     if(incrCongestion) {
+      if(r->congestWindow >= r->ssthres){
+        aimd=1;
+      }
       incrementCongestion(r);
     }else {
       //fprintf(stderr, "from within timer: %G\n", r->congestWindow);
-      r->congestWindow = max(1,r->congestWindow/2);
-      r->aimd = 1;
+      r->ssthres = r->congestWindow/2;
+      r->congestWindow = 4;
+      //r->congestWindow = max(1,r->congestWindow/2);
+      r->aimd = 0;
     }
     r->incrtTimer = -1;
   }
