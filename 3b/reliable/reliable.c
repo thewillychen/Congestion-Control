@@ -279,6 +279,7 @@ rel_read (rel_t *s)
       s->sentPackets[0].pkt = packet;
       s->sentPackets[0].valid = 1;
       s->sentPackets[0].timeCount = 0;
+      s->sentEOF = 1;
     }
 
     //if already sent EOF to the sender
