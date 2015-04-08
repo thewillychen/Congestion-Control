@@ -51,10 +51,12 @@ struct reliable_state {
   int sentEOF;
   int recvEOF;
   int timeout;
+  int dupack;
   int EOFsentTime; 
   int prevPacketFull;
   int rcvWindow;
   int congestWindow;
+  int aimd;
   //queue * SendQend;
   int arraySize;
   sentPacket * sentPackets;
@@ -96,7 +98,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
       return NULL;
     }
   }
-
+  r->aimd = 0;
   r->c = c;
   r->next = rel_list;
   r->prev = &rel_list;
@@ -165,15 +167,41 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
   if(len == ACK_PACKET_SIZE){
     int ackno = pkt->ackno;
     int i;
+    int found=0;
     for(i = 0; i<r->SWS; i++){
       if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno < ackno){
         r->sentPackets[i].valid = -1;
+        found = 1;
       }
-     
+             
     }
-    r->rcvWindow = pkt->rwnd;
-    sentPacketSize(r);
-    r->LAR = ackno -1;
+    if(found ==1 ){
+        r->rcvWindow = pkt->rwnd;
+        sentPacketSize(r);
+        r->LAR = ackno -1;      
+        r->dupack = 0;
+    }else{
+        r->dupack = r->dupack+1;
+        if(r->dupack ==3){
+          for(i=0; i<r->SWS; i++){
+            if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno == ackno){
+              int len = r->sentPackets[i].pkt->len;
+              r->sentPackets[i].pkt->ackno = htonl(r->sentPackets[i].pkt->ackno);
+              r->sentPackets[i].pkt->seqno = htonl(r->sentPackets[i].pkt->seqno);
+              r->sentPackets[i].pkt->len = htons(r->sentPackets[i].pkt->len);
+              r->sentPackets[i].pkt->rcvWindow = htonl(r->sentPackets[i].pkt->rcvWindow);
+              r->sentPackets[i].pkt->cksum = 0;
+              r->sentPackets[i].pkt->cksum = cksum(r->sentPackets[i].pkt,len);
+              conn_sendpkt(r->c, r->sentPackets[i].pkt, (size_t)len);
+              
+            }
+          }
+          r->dupack =0;
+          r->congestWindow = r->congestWindow/2;
+          r->aimd=1;
+          return;
+        }
+    }
     rel_read(r);
   }else if(len > ACK_PACKET_SIZE && len<=MAX_PACKET_SIZE){
     uint32_t seqno = pkt -> seqno;
@@ -353,7 +381,7 @@ void read_prepare(packet_t * packet){
 void
 rel_output (rel_t *r)
 {
-    conn_t * connection = r->c;
+  conn_t * connection = r->c;
   queue * recvQ = r->RecQ;
 
   int ackno = -1;
