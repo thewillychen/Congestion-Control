@@ -52,6 +52,7 @@ struct reliable_state {
   int timeout;
   int EOFsentTime; 
   int prevPacketFull;
+  int rcvWindow;
   //queue * SendQend;
   int arraySize;
   sentPacket * sentPackets;
@@ -229,6 +230,16 @@ rel_read (rel_t *s)
 {
   if(s->c->sender_receiver == RECEIVER)
   {
+    if(!(s->sentEOF)) {
+      packet_t * packet = malloc(sizeof(packet_t));
+      packet->cksum = 0;
+      packet->len = EOF_PACKET_SIZE;
+      packet->ackno = 0;
+      packet->rwnd = s->rcvWindow;
+      packet->seqno = 1;
+      send_prepare(packet);
+      conn_sendpkt(s->c, packet, EOF_PACKET_SIZE);
+    }
     //if already sent EOF to the sender
     //  return;
     //else
@@ -237,34 +248,32 @@ rel_read (rel_t *s)
   else //run in the sender mode
   {
     if(s->LFS - s->LAR < s->SWS && s->sentEOF!=1){ //&& s->prevPacketFull != 1){
-    packet_t * newPacket = create_data_packet(s);
-    if(newPacket == NULL){
-
-      return;
-    }else if(newPacket->len == EOF_PACKET_SIZE){//check for -1 aka EOF
-  
-      s->sentEOF =1;
-    }
-    int length = newPacket->len;
-    send_prepare(newPacket);
-    conn_sendpkt(s->c, newPacket, (size_t)length);
-    read_prepare(newPacket);
-    int i;
-    for(i =0; i < s->SWS; i++){
-      if(s->sentPackets[i].valid < 1){
-        s->sentPackets[i].valid = 1;
-        s->sentPackets[i].timeCount = 0;
-        s->sentPackets[i].pkt = newPacket;
-        break;
+      packet_t * newPacket = create_data_packet(s);
+      if(newPacket == NULL){
+        return;
+      }else if(newPacket->len == EOF_PACKET_SIZE){//check for -1 aka EOF 
+        s->sentEOF =1;
       }
+      int length = newPacket->len;
+      send_prepare(newPacket);
+      conn_sendpkt(s->c, newPacket, (size_t)length);
+      read_prepare(newPacket);
+      int i;
+      for(i =0; i < s->SWS; i++){
+        if(s->sentPackets[i].valid < 1){
+          s->sentPackets[i].valid = 1;
+          s->sentPackets[i].timeCount = 0;
+          s->sentPackets[i].pkt = newPacket;
+          break;
+        }
 
-    }
-          if(check_close(s) == 1){
+      }
+      if(check_close(s) == 1){
         rel_destroy(s);
         return;
       }       
-    s->LFS++;
-  }
+      s->LFS++;
+    }
   }
 }
 
