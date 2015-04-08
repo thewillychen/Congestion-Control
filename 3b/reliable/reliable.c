@@ -40,10 +40,11 @@ typedef struct timeval timeval;
 struct reliable_state {
   rel_t *next;      /* Linked list for traversing all connections */
   rel_t **prev;
-  uint32_t SWS;
-  uint32_t LAR;
-  uint32_t LFS;   // increment this 
-  uint32_t NFE;
+  uint32_t SWS;   //Sliding Window Size - sender
+  uint32_t LAR;   //Last Ack Received - sender
+  uint32_t LFS;   //Last Frame Sent - sender
+  uint32_t NFE;   //Next Frame Expected - receiver
+  uint32_t LFR;   //Last Frame Read - receiver
   conn_t *c;      /* This is the connection object */
   queue * SendQ;
   queue * RecQ;
@@ -54,6 +55,7 @@ struct reliable_state {
   int prevPacketFull;
   int rcvWindow;
   //queue * SendQend;
+  int arraySize;
   sentPacket * sentPackets;
   /* Add your own data fields below this */
 
@@ -64,6 +66,7 @@ rel_t *rel_list;
 //Helper function declarations
 void send_prepare(packet_t * packet);
 void read_prepare(packet_t * packet);
+void sentPacketSize(rel_t * r);
 packet_t * create_data_packet(rel_t * s);
 int check_close(rel_t * s);
 int timeval_subtract(timeval * result, timeval * x, timeval * y);
@@ -101,6 +104,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   }
   rel_list = r;
   r-> SWS = cc-> window;
+  r->arraySize = r->SWS;
   r-> LAR= 0;
   r-> LFS = 0;
   r-> NFE = 1;
@@ -165,6 +169,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
       }
      
     }
+    r->rcvWindow = pkt->rwnd;
     r->LAR = ackno -1;
     rel_read(r);
   }else if(len > ACK_PACKET_SIZE && len<=MAX_PACKET_SIZE){
@@ -278,6 +283,20 @@ rel_read (rel_t *s)
   }
 }
 
+void sentPacketSize(rel_t * r){
+  int size = r->SWS;
+  if(r->arraySize<size){
+    sentPacket * newArray = malloc(sizeof(sentPacket)*size*2);
+    sentPacket * temp = r->sentPackets;
+    int i;
+    for(i=0; i<r->arraySize; i++){
+      newArray[i] = temp[i];
+    }
+    r->sentPackets = newArray;
+    free(temp);
+  }
+}
+
 packet_t * create_data_packet(rel_t * s){
   packet_t *packet;
   packet = (packet_t*)malloc(sizeof(packet_t));
@@ -333,9 +352,10 @@ rel_output (rel_t *r)
     int seqno = packet->seqno;
     if(r->NFE == seqno) {
 
-      int remainingBufSpace = conn_bufspace(connection);
+      int remainingBufSpace = conn_bufspace(connection); 
       char* data = packet->data;
       int dataSize = packet->len - 12;
+      
       if(dataSize <= remainingBufSpace) {
 
         if(r->recvEOF != 1){
@@ -349,6 +369,8 @@ rel_output (rel_t *r)
       }
         ackno = seqno + 1;
         r->NFE = ackno;
+        int advertisedWindow = (int)remainingBufSpace/MAX_PACKET_SIZE - ((r->NFE-1)-r->LFR);
+        r->rcvWindow=advertisedWindow;
         queue * prev = r->RecQ;
         r->RecQ = recvQ->next;
         if(r->RecQ != NULL){
@@ -374,7 +396,7 @@ rel_output (rel_t *r)
     uint16_t ackSize = ACK_PACKET_SIZE;
     acknowledgementPacket->len = htons(ackSize);
     acknowledgementPacket->ackno = htonl(ackno);
-    acknowledgementPacket->rwnd = htonl(r->SWS);
+    acknowledgementPacket->rwnd = htonl(r->rcvWindow);
     uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
     acknowledgementPacket->cksum = checkSum;
     conn_sendpkt(connection, acknowledgementPacket, ackSize);
