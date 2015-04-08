@@ -174,6 +174,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         uint16_t ackSize = ACK_PACKET_SIZE;
         acknowledgementPacket->len = htons(ackSize);
         acknowledgementPacket->ackno = htonl(r->NFE);
+        acknowledgementPacket->rwnd = htonl(r->SWS);
         uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
         acknowledgementPacket->cksum = checkSum;
         conn_sendpkt(r->c, acknowledgementPacket, ackSize);
@@ -358,6 +359,7 @@ rel_output (rel_t *r)
     uint16_t ackSize = ACK_PACKET_SIZE;
     acknowledgementPacket->len = htons(ackSize);
     acknowledgementPacket->ackno = htonl(ackno);
+    acknowledgementPacket->rwnd = htonl(r->SWS);
     uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
     acknowledgementPacket->cksum = checkSum;
     conn_sendpkt(connection, acknowledgementPacket, ackSize);
