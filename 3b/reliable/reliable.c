@@ -15,9 +15,10 @@
 
 #include "rlib.h"
 
-#define PACKET_DATA_MAX_SIZE 500
-#define EOF_PACKET_SIZE 12
-
+#define PACKET_DATA_MAX_SIZE 1000
+#define EOF_PACKET_SIZE 16
+#define ACK_PACKET_SIZE 12
+#define MAX_PACKET_SIZE 1016
 typedef struct queue queue;
 typedef struct timeval timeval;
  struct queue {
@@ -147,14 +148,14 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
   uint16_t len = ntohs(pkt->len); 
 
   pkt-> cksum = 0;
-  if( (len<8 || len <=512) && cksum(pkt, len)!= sum){
+  if( (len<ACK_PACKET_SIZE || len <=MAX_PACKET_SIZE) && cksum(pkt, len)!= sum){
     return;
   }
 
   read_prepare(pkt);
   pkt->cksum = sum;
 
-  if(len == 8){
+  if(len == ACK_PACKET_SIZE){
     int ackno = pkt->ackno;
     int i;
     for(i = 0; i<r->SWS; i++){
@@ -165,12 +166,12 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     }
     r->LAR = ackno -1;
     rel_read(r);
-  }else if(len > 8 && len<=512){
+  }else if(len > ACK_PACKET_SIZE && len<=MAX_PACKET_SIZE){
     uint32_t seqno = pkt -> seqno;
     if((seqno < r->NFE)){
-        packet_t * acknowledgementPacket = (packet_t *) malloc(8);
+        packet_t * acknowledgementPacket = (packet_t *) malloc(ACK_PACKET_SIZE);
         acknowledgementPacket->cksum = 0;
-        uint16_t ackSize = 8;
+        uint16_t ackSize = ACK_PACKET_SIZE;
         acknowledgementPacket->len = htons(ackSize);
         acknowledgementPacket->ackno = htonl(r->NFE);
         uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
@@ -324,9 +325,9 @@ rel_output (rel_t *r)
 
   if(ackno != -1) {
   //  fprintf(stderr, "sending ack %d  \n",ackno);
-    packet_t * acknowledgementPacket = (packet_t *) malloc(8);
+    packet_t * acknowledgementPacket = (packet_t *) malloc(ACK_PACKET_SIZE);
     acknowledgementPacket->cksum = 0;
-    uint16_t ackSize = 8;
+    uint16_t ackSize = ACK_PACKET_SIZE;
     acknowledgementPacket->len = htons(ackSize);
     acknowledgementPacket->ackno = htonl(ackno);
     uint16_t checkSum = cksum(acknowledgementPacket, ackSize);
