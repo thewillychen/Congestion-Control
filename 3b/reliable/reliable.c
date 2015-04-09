@@ -490,6 +490,7 @@ rel_output (rel_t *r)
     else if(r->NFE < seqno){
       create_send_ack_packet(r);
       recvQ = recvQ->next;
+      return;
     }
     else { 
       break;
