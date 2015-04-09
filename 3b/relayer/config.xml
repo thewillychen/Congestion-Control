@@ -6,7 +6,7 @@
 <!-- 1: enable relayer log, 0: disable relayer log. log is time consuming, it may interrupt pkt transmit -->
 <enable_log>0</enable_log>
 
-<number_of_pairs>2</number_of_pairs>
+<number_of_pairs>3</number_of_pairs>
 
 <!-- propagation delay in ms, this delay should be larger than 1 -->
 <propagation_delay>20</propagation_delay>
@@ -41,18 +41,18 @@
    </receiver>
   </pair>
 
-<!--
+
   <pair>
    <sender>
-     <src>linux26:60000</src>
-     <dst>linux25:50006</dst>
+     <src>localhost:60000</src>
+     <dst>localhost:50006</dst>
    </sender>
    <receiver>
-     <src>linux27:70000</src>
-     <dst>linux25:50007</dst>
+     <src>localhost:70000</src>
+     <dst>localhost:50007</dst>
    </receiver>
   </pair>
--->
+
 </pairs>
 
 </config>

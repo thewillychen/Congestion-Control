@@ -57,6 +57,7 @@ struct reliable_state {
   int rcvWindow;
   double congestWindow;
   int aimd;
+  int retack;
   //queue * SendQend;
   int arraySize;
   sentPacket * sentPackets;
@@ -118,6 +119,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
   r-> NFE = 1;
   r->sentEOF = 0;
   r->recvEOF = 0;
+  r->retack=-1;
   r->sentPackets =(sentPacket*) malloc(sizeof(sentPacket)*2*r->SWS);
   r->EOFsentTime = 0;
   r->congestWindow = 1;
@@ -147,7 +149,7 @@ rel_destroy (rel_t *r)
 
   long beginTimeSec = r->startTime->tv_nsec;
   long endTimeSec = endTime->tv_nsec;
-  fprintf(stderr, "Elapsed time: %d seconds %lu nanoseconds\n", (int) (endTime->tv_sec - r->startTime->tv_sec), endTimeSec-beginTimeSec);
+ fprintf(stderr, "Elapsed time: %d seconds %lu nanoseconds\n", (int) (endTime->tv_sec - r->startTime->tv_sec), endTimeSec-beginTimeSec);
   /* Free any other allocated memory here */
 }
 
@@ -178,13 +180,13 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
   pkt->cksum = sum;
 
   if(len == ACK_PACKET_SIZE){
-    fprintf(stderr, "ack no %d\n", pkt->ackno);
+   // fprintf(stderr, "ack no %d\n", pkt->ackno);
     int ackno = pkt->ackno;
     int i;
     int found=0;
     for(i = 0; i<r->arraySize; i++){
       if(r->sentPackets[i].valid == 1){
-        fprintf(stderr, "In valid sentPacket with ackno %d for ackno: %d\n", r->sentPackets[i].pkt->seqno, pkt->ackno);
+   //     fprintf(stderr, "In valid sentPacket with ackno %d for ackno: %d\n", r->sentPackets[i].pkt->seqno, pkt->ackno);
         //fprintf(stderr, "within loop of rel_recv queue packet seqno %d ackno %d \n", r->sentPackets[i].pkt->seqno, ackno);
         if(r->sentPackets[i].pkt->seqno < ackno){
           r->sentPackets[i].valid = -1;
@@ -196,15 +198,15 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     }
     //fprintf(stderr, "found %d\n", found);
     if(found ==1 ){
-      fprintf(stderr, "Found for ack no %d\n", pkt->ackno);
+    //  fprintf(stderr, "Found for ack no %d\n", pkt->ackno);
         r->rcvWindow = pkt->rwnd;
         sentPacketSize(r);
         r->LAR = ackno -1;      
         r->dupack = 0;
-        fprintf(stderr, "Setting LAR to %d\n", r->LAR);
+      //  fprintf(stderr, "Setting LAR to %d\n", r->LAR);
     }else{
         r->dupack = r->dupack+1;  
-        if(r->dupack ==3){
+        if(r->dupack ==3 && ackno!=r->retack){
           for(i=0; i<r->arraySize; i++){
             if(r->sentPackets[i].valid == 1 && r->sentPackets[i].pkt->seqno == ackno){
               int len = r->sentPackets[i].pkt->len;
@@ -216,6 +218,8 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
               r->sentPackets[i].pkt->cksum = cksum(r->sentPackets[i].pkt,len);
               conn_sendpkt(r->c, r->sentPackets[i].pkt, (size_t)len);
               read_prepare(r->sentPackets[i].pkt);
+              r->retack = ackno;
+   //           fprintf(stderr, "fast recovery %d \n",r->sentPackets[i].pkt->seqno);
             }
           }
           r->dupack =0;
@@ -226,7 +230,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
     }
     rel_read(r);
   }else if(len > ACK_PACKET_SIZE && len<=MAX_PACKET_SIZE){
-    fprintf(stderr, "seqno: %d, NFE:%d \n", pkt->seqno, r->NFE);
+ //   fprintf(stderr, "seqno: %d, NFE:%d \n", pkt->seqno, r->NFE);
     uint32_t seqno = pkt -> seqno;
     if((seqno < r->NFE)){
       create_send_ack_packet(r);
@@ -279,15 +283,15 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
         }
       }
     }
-    head = r-> RecQ;
-    queue* current = head;
-    int size =0;
-    while(current!= NULL){
-      fprintf(stderr, "asdfsjf");
-      current =current->next;
-      size += 1;
-    }
-    fprintf(stderr, "recq %d\n", size );
+    // head = r-> RecQ;
+    // queue* current = head;
+    // int size =0;
+    // while(current!= NULL){
+    //   fprintf(stderr, "asdfsjf");
+    //   current =current->next;
+    //   size += 1;
+    // }
+ //   fprintf(stderr, "recq %d\n", size );
       rel_output(r);
    }
    //fprintf(stderr, "rel_recv returns");
@@ -315,7 +319,7 @@ rel_read (rel_t *s)
   }
   else //run in the sender mode
   {
-    fprintf(stderr, "Trying to send packet for LFS %d, LAR %d, SWS %d\n", s->LFS, s->LAR, s->SWS);
+ //   fprintf(stderr, "Trying to send packet for LFS %d, LAR %d, SWS %d\n", s->LFS, s->LAR, s->SWS);
     //fprintf(stderr, "tryingsending packet LFS %d, LAR %d, SWS %d, sentEOF %d\n", s->LFS, s->LAR, s->SWS, s->sentEOF);
     if(s->LFS - s->LAR < s->SWS && s->sentEOF!=1){ //&& s->prevPacketFull != 1){
       packet_t * newPacket = create_data_packet(s);
@@ -433,7 +437,7 @@ rel_output (rel_t *r)
   queue * recvQ = r->RecQ;
   int ackno = -1;
   while(recvQ != NULL) {
-    fprintf(stderr, "stuck seqno %d NFE %d\n", recvQ->pkt->seqno, r->NFE);
+ //   fprintf(stderr, "stuck seqno %d NFE %d\n", recvQ->pkt->seqno, r->NFE);
     packet_t * packet = recvQ->pkt;
     int seqno = packet->seqno;
     if(r->recvEOF) {
@@ -442,14 +446,14 @@ rel_output (rel_t *r)
       r->RecQ= NULL;
     }
     if(r->NFE == seqno) {
-      fprintf(stderr, "NFE = seqno: %d = %d \n", recvQ->pkt->seqno, r->NFE);
+ //     fprintf(stderr, "NFE = seqno: %d = %d \n", recvQ->pkt->seqno, r->NFE);
       int remainingBufSpace = conn_bufspace(connection); 
       char* data = packet->data;
       int dataSize = packet->len - EOF_PACKET_SIZE;
       
       if(dataSize <= remainingBufSpace) {
 
-        fprintf(stderr, "NFE = seqno and dataSize < remainingBufSpace: %d = %d \n", recvQ->pkt->seqno, r->NFE);
+//        fprintf(stderr, "NFE = seqno and dataSize < remainingBufSpace: %d = %d \n", recvQ->pkt->seqno, r->NFE);
         if(r->recvEOF != 1){
          conn_output(connection, data, dataSize);
         }
@@ -471,7 +475,7 @@ rel_output (rel_t *r)
         ackno = seqno + 1;
         r->NFE = ackno;
 
-        fprintf(stderr, "new NFE: %d \n", r->NFE);
+ //       fprintf(stderr, "new NFE: %d \n", r->NFE);
         int advertisedWindow = r->rcvWindow;
         //fprintf(stderr, "advertised window %d \n", advertisedWindow);
         r->rcvWindow=advertisedWindow;  
@@ -551,7 +555,7 @@ int check_close(rel_t * s){ //Still need to check for time condition!
   }
   return 0;
 }
-
+int count =0;
 void
 rel_timer ()
 {
@@ -561,11 +565,13 @@ rel_timer ()
   if(r->sentEOF== 1){
     r->EOFsentTime = r->EOFsentTime +1;
   }
+  int timeout =0;
+
   for(i = 0; i < r->arraySize; i++){
 
     if(r->sentPackets[i].valid == 1) {
-      if(r->sentPackets[i].timeCount >= 4) {
-        fprintf(stderr, "retransmit seq no: %d LAR: %d \n", r->sentPackets[i].pkt->seqno, r->LAR);
+      if(r->sentPackets[i].timeCount >= 5) {
+ //     fprintf(stderr, "retransmit seq no: %d LAR: %d coutn %d SWS %d\n", r->sentPackets[i].pkt->seqno, r->LAR, count, r->SWS);
         r->sentPackets[i].timeCount = 0;
         int len = r->sentPackets[i].pkt->len;
         r->sentPackets[i].pkt->ackno = htonl(r->sentPackets[i].pkt->ackno);
@@ -575,11 +581,17 @@ rel_timer ()
         r->sentPackets[i].pkt->cksum = cksum(r->sentPackets[i].pkt,len);
         conn_sendpkt(r->c, r->sentPackets[i].pkt, (size_t)len);
         read_prepare(r->sentPackets[i].pkt);
+        timeout = 1;
       }
       else{
         r->sentPackets[i].timeCount = r->sentPackets[i].timeCount + 1;
       }
     }
+    if(timeout ==1){
+        r->congestWindow = 1;
+        r->aimd = 0;
+        count = count+1;
+      }
     if(check_close(r) == 1){
       rel_destroy(r);
       return;
@@ -598,11 +610,11 @@ rel_timer ()
     }
     if(incrCongestion) {
       incrementCongestion(r);
-    }else {
-      //fprintf(stderr, "from within timer: %G\n", r->congestWindow);
-      r->congestWindow = max(1,r->congestWindow/2);
-      r->aimd = 1;
-    }
+     }//else {
+    //   //fprintf(stderr, "from within timer: %G\n", r->congestWindow);
+    //   r->congestWindow = 1;
+    //   r->aimd = 0;
+    // }
     r->incrtTimer = -1;
   }
   r->incrtTimer = r->incrtTimer + 1;
@@ -621,7 +633,7 @@ max(int i, double j)
 void
 incrementCongestion(rel_t * r) {
   if(r->aimd) {
-    //fprintf(stderr, "AIMD contesgion %G \n", r->congestWindow);
+   // fprintf(stderr, "AIMD contesgion %G \n", r->congestWindow);
     r->congestWindow = r->congestWindow + 1;
   }
   else{
